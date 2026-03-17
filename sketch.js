@@ -9,6 +9,8 @@ let loading = true;
 let loadError = null;
 let loadingMessage = "Loading local dataset...";
 let dataMeta = null;
+let globalTempMin = null;
+let globalTempMax = null;
 
 function setup() {
   const container = document.getElementById("app");
@@ -50,7 +52,7 @@ function drawHeader() {
   noStroke();
   textAlign(LEFT, TOP);
   textSize(24);
-  text("Quebec Cities: Yearly Average Temperature", 40, 24);
+  text("Quebec Cities: Circular Yearly Temperature", 40, 24);
 
   textSize(14);
   fill("#315379");
@@ -71,18 +73,6 @@ function drawCenteredText(message, yRatio) {
 }
 
 function drawChart() {
-  const margin = {
-    left: 80,
-    right: 40,
-    top: 130,
-    bottom: 145
-  };
-
-  const chartX = margin.left;
-  const chartY = margin.top;
-  const chartW = width - margin.left - margin.right;
-  const chartH = height - margin.top - margin.bottom;
-
   const entries = QUEBEC_CITIES.map((city) => {
     const byYear = cityYearlyAvg[city.name] || {};
     return { name: city.name, value: byYear[selectedYear] ?? null };
@@ -95,89 +85,96 @@ function drawChart() {
     return;
   }
 
-  let yMin = Math.floor(Math.min(...validValues)) - 1;
-  let yMax = Math.ceil(Math.max(...validValues)) + 1;
-  if (yMin === yMax) {
-    yMax += 1;
-    yMin -= 1;
-  }
+  let vMin = Number.isFinite(globalTempMin) ? globalTempMin : Math.floor(Math.min(...validValues)) - 1;
+  let vMax = Number.isFinite(globalTempMax) ? globalTempMax : Math.ceil(Math.max(...validValues)) + 1;
 
-  stroke("#d7e6f8");
-  strokeWeight(1);
-  fill("#edf5ff");
-  rect(chartX, chartY, chartW, chartH, 10);
+  const cx = width * 0.5;
+  const cy = height * 0.54;
+  const outerR = Math.min(width, height) * 0.31;
+  const innerR = outerR * 0.3;
 
-  drawGridAndYAxis(chartX, chartY, chartW, chartH, yMin, yMax);
+  drawPolarGrid(cx, cy, innerR, outerR, vMin, vMax, entries.length);
 
   const points = [];
-  entries.forEach((entry, idx) => {
-    if (!Number.isFinite(entry.value)) return;
-    const x = map(idx, 0, QUEBEC_CITIES.length - 1, chartX + 10, chartX + chartW - 10);
-    const y = map(entry.value, yMin, yMax, chartY + chartH - 10, chartY + 10);
-    points.push({ x, y, name: entry.name, value: entry.value, idx });
-  });
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i];
+    if (!Number.isFinite(entry.value)) continue;
 
-  if (points.length >= 2) {
-    noFill();
-    stroke("#1d70d6");
-    strokeWeight(3);
-    beginShape();
-    curveVertex(points[0].x, points[0].y);
-    for (const p of points) {
-      curveVertex(p.x, p.y);
-    }
-    curveVertex(points[points.length - 1].x, points[points.length - 1].y);
-    endShape();
+    const angle = map(i, 0, entries.length, -HALF_PI, TWO_PI - HALF_PI);
+    const r = map(entry.value, vMin, vMax, innerR, outerR);
+    const x = cx + cos(angle) * r;
+    const y = cy + sin(angle) * r;
+    points.push({ x, y, angle, name: entry.name, value: entry.value });
   }
 
-  stroke("#1d70d6");
+  if (points.length > 2) {
+    fill(225, 62, 74, 22);
+    stroke("#d62839");
+    strokeWeight(2.6);
+    drawExactClosedShape(points);
+  }
+
+  stroke("#d62839");
   fill("#ffffff");
-  strokeWeight(2);
+  strokeWeight(1.6);
   for (const p of points) {
-    circle(p.x, p.y, 8);
+    circle(p.x, p.y, 4.8);
   }
-
-  noStroke();
-  fill("#21486f");
-  textSize(10);
-  textAlign(CENTER, TOP);
-  QUEBEC_CITIES.forEach((city, idx) => {
-    const x = map(idx, 0, QUEBEC_CITIES.length - 1, chartX + 10, chartX + chartW - 10);
-    push();
-    translate(x, chartY + chartH + 12);
-    rotate(-PI / 3.8);
-    text(city.name, 0, 0);
-    pop();
-  });
-
-  fill("#21486f");
-  textAlign(RIGHT, CENTER);
-  textSize(11);
-  text("Average Temperature (deg C)", chartX - 14, chartY - 18);
 }
 
-function drawGridAndYAxis(chartX, chartY, chartW, chartH, yMin, yMax) {
-  const ticks = 6;
-  textSize(11);
-  for (let i = 0; i <= ticks; i++) {
-    const t = i / ticks;
-    const y = lerp(chartY + chartH - 10, chartY + 10, t);
-    const value = lerp(yMin, yMax, t);
+function drawPolarGrid(cx, cy, innerR, outerR, vMin, vMax, count) {
+  const rings = 4;
+  stroke("#cfdae8");
+  strokeWeight(1);
+  noFill();
 
-    stroke("#d3e2f5");
-    strokeWeight(1);
-    line(chartX + 2, y, chartX + chartW - 2, y);
-
-    noStroke();
-    fill("#2d4f75");
-    textAlign(RIGHT, CENTER);
-    text(value.toFixed(1), chartX - 10, y);
+  for (let i = 0; i <= rings; i++) {
+    const r = lerp(innerR, outerR, i / rings);
+    circle(cx, cy, r * 2);
   }
 
-  stroke("#4c6f96");
-  strokeWeight(1.5);
-  line(chartX, chartY, chartX, chartY + chartH);
-  line(chartX, chartY + chartH, chartX + chartW, chartY + chartH);
+  for (let i = 0; i < count; i++) {
+    const angle = map(i, 0, count, -HALF_PI, TWO_PI - HALF_PI);
+    const x = cx + cos(angle) * outerR;
+    const y = cy + sin(angle) * outerR;
+    line(cx, cy, x, y);
+  }
+
+  textSize(10);
+  fill("#5a6b81");
+  noStroke();
+  textAlign(LEFT, CENTER);
+  for (let i = 0; i <= rings; i++) {
+    const r = lerp(innerR, outerR, i / rings);
+    const value = lerp(vMin, vMax, i / rings);
+    text(value.toFixed(1), cx + r + 6, cy);
+  }
+
+  textSize(8);
+  fill("#78889e");
+  textAlign(CENTER, CENTER);
+  for (let i = 0; i < count; i++) {
+    const city = QUEBEC_CITIES[i];
+    const angle = map(i, 0, count, -HALF_PI, TWO_PI - HALF_PI);
+    const x = cx + cos(angle) * (outerR + 16);
+    const y = cy + sin(angle) * (outerR + 16);
+    text(shortCityLabel(city.name), x, y);
+  }
+}
+
+function drawExactClosedShape(points) {
+  beginShape();
+  for (const p of points) vertex(p.x, p.y);
+  endShape(CLOSE);
+}
+
+function shortCityLabel(name) {
+  if (name.length <= 6) return name;
+  const compact = name.split(/[-\s]/).filter(Boolean);
+  if (compact.length > 1) {
+    return compact.map((part) => part[0]).join("").slice(0, 4).toUpperCase();
+  }
+  return name.slice(0, 6);
 }
 
 async function loadTemperatureData() {
@@ -235,6 +232,21 @@ function hydrateFromDataset(payload) {
 
   if (!availableYears.length) {
     throw new Error("Dataset does not contain yearly values.");
+  }
+
+  const allValues = [];
+  rows.forEach((row) => {
+    Object.values(row.yearly || {}).forEach((v) => {
+      if (Number.isFinite(v)) allValues.push(v);
+    });
+  });
+  if (allValues.length) {
+    globalTempMin = Math.floor(Math.min(...allValues)) - 1;
+    globalTempMax = Math.ceil(Math.max(...allValues)) + 1;
+    if (globalTempMin === globalTempMax) {
+      globalTempMax += 1;
+      globalTempMin -= 1;
+    }
   }
 
   const minYear = availableYears[0];
