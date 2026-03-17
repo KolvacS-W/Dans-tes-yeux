@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Quebec Temperature Flow Portrait</title>
+    <style>
+      :root {
+        --bg-1: #060812;
+        --bg-2: #0b1022;
+      }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        font-family: "Avenir Next", "Trebuchet MS", sans-serif;
+        background: radial-gradient(circle at 20% 10%, #151b35 0%, var(--bg-2) 35%, var(--bg-1) 100%);
+      }
+
+      main {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      #app {
+        width: min(1220px, 98vw);
+        padding: 18px 10px 24px;
+      }
+
+      canvas {
+        display: block;
+        border-radius: 14px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
+      }
+
+      .p5Slider {
+        width: min(560px, 82vw);
+        accent-color: #85a1ff;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="app"></div>
+    </main>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.11.3/p5.min.js"></script>
+    <script src="./sketch.js"></script>
+  </body>
+</html>
