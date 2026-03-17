@@ -19,7 +19,7 @@ const QUEBEC_CITIES = [
   { name: "Repentigny", latitude: 45.7422, longitude: -73.4501 }
 ];
 
-const OUTPUT_PATH = path.join(process.cwd(), "data", `quebec_city_yearly_temps_${START_YEAR}_${END_YEAR}.json`);
+const OUTPUT_PATH = path.join(process.cwd(), "data", `quebec_city_monthly_temps_${START_YEAR}_${END_YEAR}.json`);
 const MIN_429_DELAY_MS = 15000;
 
 function sleep(ms) {
@@ -66,7 +66,7 @@ async function fetchWithBackoff(url, maxRetries = 10) {
   throw new Error("Unexpected retry loop exit.");
 }
 
-function computeYearlyAverages(times, temps) {
+function computeMonthlyAverages(times, temps) {
   const accum = {};
 
   for (let i = 0; i < times.length; i++) {
@@ -74,22 +74,28 @@ function computeYearlyAverages(times, temps) {
     if (!Number.isFinite(value)) continue;
 
     const year = Number(times[i].slice(0, 4));
-    if (!accum[year]) accum[year] = { sum: 0, count: 0 };
+    const month = Number(times[i].slice(5, 7));
 
-    accum[year].sum += value;
-    accum[year].count += 1;
+    if (!accum[year]) accum[year] = {};
+    if (!accum[year][month]) accum[year][month] = { sum: 0, count: 0 };
+
+    accum[year][month].sum += value;
+    accum[year][month].count += 1;
   }
 
-  const yearly = {};
+  const monthly = {};
   for (const year of Object.keys(accum)) {
-    const { sum, count } = accum[year];
-    yearly[year] = count ? Number((sum / count).toFixed(4)) : null;
+    monthly[year] = {};
+    for (const month of Object.keys(accum[year])) {
+      const { sum, count } = accum[year][month];
+      monthly[year][month] = count ? Number((sum / count).toFixed(4)) : null;
+    }
   }
 
-  return yearly;
+  return monthly;
 }
 
-async function fetchCityYearly(city) {
+async function fetchCityMonthly(city) {
   const url = new URL("https://archive-api.open-meteo.com/v1/archive");
   url.searchParams.set("latitude", city.latitude);
   url.searchParams.set("longitude", city.longitude);
@@ -111,7 +117,7 @@ async function fetchCityYearly(city) {
     city: city.name,
     latitude: city.latitude,
     longitude: city.longitude,
-    yearly: computeYearlyAverages(times, temps)
+    monthly: computeMonthlyAverages(times, temps)
   };
 }
 
@@ -136,7 +142,7 @@ async function main() {
       continue;
     }
     process.stdout.write(`Fetching ${city.name} (${i + 1}/${QUEBEC_CITIES.length})...\n`);
-    const row = await fetchCityYearly(city);
+    const row = await fetchCityMonthly(city);
     rows.push(row);
     await writePayload(rows);
     await sleep(700);
@@ -151,6 +157,7 @@ async function writePayload(rows) {
     source: "Open-Meteo Historical Weather API",
     endpoint: "https://archive-api.open-meteo.com/v1/archive",
     variable: "daily.temperature_2m_mean",
+    aggregate: "monthly_mean_from_daily_mean",
     units: "deg C",
     timezone: "America/Toronto",
     startYear: START_YEAR,

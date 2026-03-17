@@ -1,22 +1,25 @@
-# Quebec Temperature Flow Portrait (p5.js)
+# Quebec Cities Circular Temperature Chart (p5.js)
 
-Flow-field generative artwork built from Quebec city yearly average temperatures.
+This sketch renders a circular line chart where:
+- angle dimension (x-axis semantics): Quebec cities
+- radius (y-axis): average temperature for selected year + month
 
-- Threads start from the top of the canvas
-- A flow field bends them downward
-- The strands are attracted to a data-defined figure shape for the selected year
+Controls:
+- Year slider
+- Month slider
 
-## Dataset
+## Dataset (local at runtime)
 
 Source: Open-Meteo Historical Weather API
 - Docs: https://open-meteo.com/en/docs/historical-weather-api
 - Endpoint: `https://archive-api.open-meteo.com/v1/archive`
 - Variable: `daily=temperature_2m_mean`
+- Aggregate in local file: monthly mean from daily means
 
-Local file used at runtime:
-- `data/quebec_city_yearly_temps_2000_2025.json`
+Local file used by the sketch:
+- `data/quebec_city_monthly_temps_2000_2025.json`
 
-## Refresh dataset (optional)
+## Refresh local dataset
 
 ```bash
 node scripts/download_quebec_temps.mjs

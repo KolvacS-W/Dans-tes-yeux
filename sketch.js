@@ -1,10 +1,27 @@
-const DATA_FILE = "./data/quebec_city_yearly_temps_2000_2025.json";
+const DATA_FILE = "./data/quebec_city_monthly_temps_2000_2025.json";
+
+const MONTH_NAMES = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December"
+];
 
 let QUEBEC_CITIES = [];
-let cityYearlyAvg = {};
+let cityMonthlyAvg = {};
 let availableYears = [];
 let selectedYear = 2020;
+let selectedMonth = 1;
 let yearSlider;
+let monthSlider;
 let loading = true;
 let loadError = null;
 let loadingMessage = "Loading local dataset...";
@@ -14,7 +31,7 @@ let globalTempMax = null;
 
 function setup() {
   const container = document.getElementById("app");
-  const canvas = createCanvas(getCanvasWidth(), 620);
+  const canvas = createCanvas(getCanvasWidth(), 660);
   canvas.parent(container);
 
   yearSlider = createSlider(2000, 2025, selectedYear, 1);
@@ -24,7 +41,14 @@ function setup() {
     selectedYear = yearSlider.value();
   });
 
-  positionSlider();
+  monthSlider = createSlider(1, 12, selectedMonth, 1);
+  monthSlider.parent(container);
+  monthSlider.addClass("p5Slider");
+  monthSlider.input(() => {
+    selectedMonth = monthSlider.value();
+  });
+
+  positionSliders();
   loadTemperatureData();
 }
 
@@ -52,17 +76,22 @@ function drawHeader() {
   noStroke();
   textAlign(LEFT, TOP);
   textSize(24);
-  text("Quebec Cities: Circular Yearly Temperature", 40, 24);
+  text("Quebec Cities: Circular Monthly Temperature", 40, 24);
 
   textSize(14);
   fill("#315379");
   text(`Year: ${selectedYear}`, 42, 58);
+  text(`Month: ${MONTH_NAMES[selectedMonth - 1]}`, 42, 78);
 
   if (dataMeta) {
-    text(`Source: ${dataMeta.source} (${dataMeta.startYear}-${dataMeta.endYear})`, 42, 78);
+    text(`Source: ${dataMeta.source} (${dataMeta.startYear}-${dataMeta.endYear})`, 42, 98);
   } else {
-    text("Source: local pre-downloaded dataset", 42, 78);
+    text("Source: local pre-downloaded dataset", 42, 98);
   }
+
+  textSize(11);
+  fill("#48688c");
+  text("Y-axis (radius) is fixed across all years and months.", 42, 118);
 }
 
 function drawCenteredText(message, yRatio) {
@@ -74,23 +103,24 @@ function drawCenteredText(message, yRatio) {
 
 function drawChart() {
   const entries = QUEBEC_CITIES.map((city) => {
-    const byYear = cityYearlyAvg[city.name] || {};
-    return { name: city.name, value: byYear[selectedYear] ?? null };
+    const byYear = cityMonthlyAvg[city.name] || {};
+    const byMonth = byYear[selectedYear] || {};
+    return { name: city.name, value: byMonth[selectedMonth] ?? null };
   });
 
   const validValues = entries.map((d) => d.value).filter((v) => Number.isFinite(v));
 
   if (!validValues.length) {
-    drawCenteredText(`No data available for ${selectedYear}`, 0.55);
+    drawCenteredText(`No data available for ${MONTH_NAMES[selectedMonth - 1]} ${selectedYear}`, 0.56);
     return;
   }
 
-  let vMin = Number.isFinite(globalTempMin) ? globalTempMin : Math.floor(Math.min(...validValues)) - 1;
-  let vMax = Number.isFinite(globalTempMax) ? globalTempMax : Math.ceil(Math.max(...validValues)) + 1;
+  const vMin = Number.isFinite(globalTempMin) ? globalTempMin : Math.floor(Math.min(...validValues)) - 1;
+  const vMax = Number.isFinite(globalTempMax) ? globalTempMax : Math.ceil(Math.max(...validValues)) + 1;
 
   const cx = width * 0.5;
-  const cy = height * 0.54;
-  const outerR = Math.min(width, height) * 0.31;
+  const cy = height * 0.56;
+  const outerR = Math.min(width, height) * 0.29;
   const innerR = outerR * 0.3;
 
   drawPolarGrid(cx, cy, innerR, outerR, vMin, vMax, entries.length);
@@ -118,7 +148,7 @@ function drawChart() {
   fill("#ffffff");
   strokeWeight(1.6);
   for (const p of points) {
-    circle(p.x, p.y, 4.8);
+    circle(p.x, p.y, 5);
   }
 }
 
@@ -198,7 +228,7 @@ async function loadTemperatureData() {
     hydrateFromDataset(payload);
   } catch (err) {
     console.error(err);
-    loadError = "Could not load local dataset. Run `node scripts/download_quebec_temps.mjs` first.";
+    loadError = "Could not load local monthly dataset. Run `node scripts/download_quebec_temps.mjs` first.";
   } finally {
     loading = false;
   }
@@ -218,28 +248,29 @@ function hydrateFromDataset(payload) {
     longitude: row.longitude
   }));
 
-  cityYearlyAvg = {};
+  cityMonthlyAvg = {};
   rows.forEach((row) => {
-    cityYearlyAvg[row.city] = row.yearly || {};
+    cityMonthlyAvg[row.city] = row.monthly || {};
   });
 
   const years = new Set();
+  const allValues = [];
   rows.forEach((row) => {
-    Object.keys(row.yearly || {}).forEach((year) => years.add(Number(year)));
+    const monthly = row.monthly || {};
+    Object.keys(monthly).forEach((year) => {
+      years.add(Number(year));
+      const months = monthly[year] || {};
+      Object.values(months).forEach((value) => {
+        if (Number.isFinite(value)) allValues.push(value);
+      });
+    });
   });
 
   availableYears = [...years].sort((a, b) => a - b);
-
   if (!availableYears.length) {
-    throw new Error("Dataset does not contain yearly values.");
+    throw new Error("Dataset does not contain monthly values.");
   }
 
-  const allValues = [];
-  rows.forEach((row) => {
-    Object.values(row.yearly || {}).forEach((v) => {
-      if (Number.isFinite(v)) allValues.push(v);
-    });
-  });
   if (allValues.length) {
     globalTempMin = Math.floor(Math.min(...allValues)) - 1;
     globalTempMax = Math.ceil(Math.max(...allValues)) + 1;
@@ -258,19 +289,25 @@ function hydrateFromDataset(payload) {
     selectedYear = maxYear;
     yearSlider.value(selectedYear);
   }
+
+  monthSlider.attribute("min", 1);
+  monthSlider.attribute("max", 12);
+  if (selectedMonth < 1 || selectedMonth > 12) {
+    selectedMonth = 1;
+    monthSlider.value(selectedMonth);
+  }
 }
 
 function windowResized() {
-  resizeCanvas(getCanvasWidth(), 620);
-  positionSlider();
+  resizeCanvas(getCanvasWidth(), 660);
+  positionSliders();
 }
 
 function getCanvasWidth() {
   return Math.min(windowWidth * 0.95, 1100);
 }
 
-function positionSlider() {
-  const sliderX = 42;
-  const sliderY = height - 42;
-  yearSlider.position(sliderX, sliderY);
+function positionSliders() {
+  yearSlider.position(42, height - 68);
+  monthSlider.position(42, height - 36);
 }
