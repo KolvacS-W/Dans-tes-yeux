@@ -195,8 +195,8 @@ function drawIrisFibers(cx, cy, pupilR, irisR, colPoints) {
     }
 
     // Inward: grow into the pupil so fiber tips define its organic edge
-    if (random() < 0.58) {
-      growFiber(cx, cy, sx, sy, baseAngle + PI, seedR, pupilR * 0.82, false, 0, 0.72, 88);
+    if (random() < 0.72) {
+      growFiber(cx, cy, sx, sy, baseAngle + PI, seedR, pupilR * 0.74, false, 0, 0.72, 88);
     }
   }
 }
@@ -238,10 +238,13 @@ function growFiber(cx, cy, startX, startY, angle, startR, targetR, goingOut, dep
       b = lerp(255, 172, ease);
       alpha = lerp(parentAlpha, parentAlpha * 0.17, pow(t, 1.3));
     } else {
-      r = lerp(222, 115, t);
-      g = lerp(212, 162, t);
-      b = lerp(255, 255, t);
-      alpha = lerp(parentAlpha, 0, pow(t, 0.65));
+      // Dim at collarette, crescendo to bright white at the pupil border
+      const ease = pow(t, 0.42);
+      r = lerp(130, 255, ease);
+      g = lerp(148, 238, ease);
+      b = lerp(210, 255, ease);
+      alpha = lerp(parentAlpha * 0.10, parentAlpha * 1.45, ease);
+      alpha = min(alpha, 228);
     }
 
     stroke(r, g, b, alpha);
@@ -264,44 +267,46 @@ function growFiber(cx, cy, startX, startY, angle, startR, targetR, goingOut, dep
   }
 }
 
-// Draws the collarette ring — the temperature data polygon — with a layered
-// glow and per-segment temperature colouring (cyan = cold, magenta = warm).
+// Renders the collarette as an organic fibrous texture rather than strict lines.
+// 3500 short random strokes are seeded densely along the data polygon, with
+// small positional jitter, producing a natural interwoven ring appearance.
 function drawCollarette(points, vMin, vMax) {
-  if (points.length < 3) return;
-
-  // Four passes: wide soft glow → tight bright edge
-  const passes = [
-    { sw: 14, a: 18 },
-    { sw: 7,  a: 38 },
-    { sw: 3.5, a: 88 },
-    { sw: 1.8, a: 185 },
-  ];
-
+  if (points.length < 2) return;
+  const n = points.length;
+  const numStrokes = 3500;
   noFill();
-  for (const pass of passes) {
-    strokeWeight(pass.sw);
-    for (let i = 0; i < points.length; i++) {
-      const p0 = points[i];
-      const p1 = points[(i + 1) % points.length];
-      const midVal = (p0.value + p1.value) / 2;
-      const t = constrain(map(midVal, vMin, vMax, 0, 1), 0, 1);
-      // cold → cyan (#40C8FF), warm → magenta (#FF28C0)
-      stroke(
-        lerp(64,  255, t),
-        lerp(200, 40,  t),
-        lerp(255, 192, t),
-        pass.a
-      );
-      line(p0.x, p0.y, p1.x, p1.y);
-    }
-  }
 
-  // City-data dots on the collarette
-  noStroke();
-  for (const p of points) {
-    const t = constrain(map(p.value, vMin, vMax, 0, 1), 0, 1);
-    fill(lerp(80, 255, t), lerp(210, 50, t), lerp(255, 200, t), 220);
-    circle(p.x, p.y, 4);
+  for (let i = 0; i < numStrokes; i++) {
+    const t = i / numStrokes;
+    const rawIdx = t * n;
+    const i0 = floor(rawIdx) % n;
+    const i1 = (i0 + 1) % n;
+    const f = rawIdx - floor(rawIdx);
+
+    // Interpolated position on collarette polygon
+    const px = lerp(points[i0].x, points[i1].x, f);
+    const py = lerp(points[i0].y, points[i1].y, f);
+    const val = lerp(points[i0].value, points[i1].value, f);
+
+    // Temperature colour: cold = cyan, warm = magenta
+    const tc = constrain(map(val, vMin, vMax, 0, 1), 0, 1);
+    const cr = lerp(80,  255, tc);
+    const cg = lerp(215,  48, tc);
+    const cb = lerp(255, 198, tc);
+
+    // Small random offset from the path so strokes form a fuzzy band
+    const ox = random(-7, 7);
+    const oy = random(-7, 7);
+    const sx = px + ox;
+    const sy = py + oy;
+
+    // Each stroke is short and randomly angled
+    const ang = random(TWO_PI);
+    const len = random(3, 20);
+
+    stroke(cr, cg, cb, random(38, 185));
+    strokeWeight(random(0.4, 2.6));
+    line(sx, sy, sx + cos(ang) * len, sy + sin(ang) * len);
   }
 }
 
