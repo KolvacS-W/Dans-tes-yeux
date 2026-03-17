@@ -12,8 +12,9 @@ const MONTH_NAMES = [
   "September",
   "October",
   "November",
-  "December"
+  "December",
 ];
+const CENTER_CIRCLE_RATIO = 0.5;
 
 let QUEBEC_CITIES = [];
 let cityMonthlyAvg = {};
@@ -84,7 +85,11 @@ function drawHeader() {
   text(`Month: ${MONTH_NAMES[selectedMonth - 1]}`, 42, 78);
 
   if (dataMeta) {
-    text(`Source: ${dataMeta.source} (${dataMeta.startYear}-${dataMeta.endYear})`, 42, 98);
+    text(
+      `Source: ${dataMeta.source} (${dataMeta.startYear}-${dataMeta.endYear})`,
+      42,
+      98,
+    );
   } else {
     text("Source: local pre-downloaded dataset", 42, 98);
   }
@@ -108,15 +113,24 @@ function drawChart() {
     return { name: city.name, value: byMonth[selectedMonth] ?? null };
   });
 
-  const validValues = entries.map((d) => d.value).filter((v) => Number.isFinite(v));
+  const validValues = entries
+    .map((d) => d.value)
+    .filter((v) => Number.isFinite(v));
 
   if (!validValues.length) {
-    drawCenteredText(`No data available for ${MONTH_NAMES[selectedMonth - 1]} ${selectedYear}`, 0.56);
+    drawCenteredText(
+      `No data available for ${MONTH_NAMES[selectedMonth - 1]} ${selectedYear}`,
+      0.56,
+    );
     return;
   }
 
-  const vMin = Number.isFinite(globalTempMin) ? globalTempMin : Math.floor(Math.min(...validValues)) - 1;
-  const vMax = Number.isFinite(globalTempMax) ? globalTempMax : Math.ceil(Math.max(...validValues)) + 1;
+  const vMin = Number.isFinite(globalTempMin)
+    ? globalTempMin
+    : Math.floor(Math.min(...validValues)) - 1;
+  const vMax = Number.isFinite(globalTempMax)
+    ? globalTempMax
+    : Math.ceil(Math.max(...validValues)) + 1;
 
   const cx = width * 0.5;
   const cy = height * 0.56;
@@ -137,6 +151,12 @@ function drawChart() {
     points.push({ x, y, angle, name: entry.name, value: entry.value });
   }
 
+  const monthlyMean =
+    validValues.reduce((sum, v) => sum + v, 0) / validValues.length;
+  const meanRadius = map(monthlyMean, vMin, vMax, innerR, outerR);
+  const centerRadius = Math.max(6, meanRadius * CENTER_CIRCLE_RATIO);
+  drawCenterMeanCircle(cx, cy, centerRadius, monthlyMean);
+
   if (points.length > 2) {
     fill(225, 62, 74, 22);
     stroke("#d62839");
@@ -150,6 +170,19 @@ function drawChart() {
   for (const p of points) {
     circle(p.x, p.y, 5);
   }
+}
+
+function drawCenterMeanCircle(cx, cy, r, meanValue) {
+  noFill();
+  stroke("#284a74");
+  strokeWeight(1.4);
+  circle(cx, cy, r * 2);
+
+  noStroke();
+  fill("#284a74");
+  textSize(10);
+  textAlign(CENTER, CENTER);
+  text(`avg ${meanValue.toFixed(1)} C`, cx, cy);
 }
 
 function drawPolarGrid(cx, cy, innerR, outerR, vMin, vMax, count) {
@@ -202,7 +235,11 @@ function shortCityLabel(name) {
   if (name.length <= 6) return name;
   const compact = name.split(/[-\s]/).filter(Boolean);
   if (compact.length > 1) {
-    return compact.map((part) => part[0]).join("").slice(0, 4).toUpperCase();
+    return compact
+      .map((part) => part[0])
+      .join("")
+      .slice(0, 4)
+      .toUpperCase();
   }
   return name.slice(0, 6);
 }
@@ -213,7 +250,8 @@ async function loadTemperatureData() {
   loadingMessage = "Loading local dataset...";
 
   if (window.location.protocol === "file:") {
-    loadError = "Run this with a local server (not file://), e.g. `python3 -m http.server 8000`.";
+    loadError =
+      "Run this with a local server (not file://), e.g. `python3 -m http.server 8000`.";
     loading = false;
     return;
   }
@@ -228,7 +266,8 @@ async function loadTemperatureData() {
     hydrateFromDataset(payload);
   } catch (err) {
     console.error(err);
-    loadError = "Could not load local monthly dataset. Run `node scripts/download_quebec_temps.mjs` first.";
+    loadError =
+      "Could not load local monthly dataset. Run `node scripts/download_quebec_temps.mjs` first.";
   } finally {
     loading = false;
   }
@@ -238,14 +277,14 @@ function hydrateFromDataset(payload) {
   dataMeta = {
     source: payload?.source || "Unknown",
     startYear: payload?.startYear,
-    endYear: payload?.endYear
+    endYear: payload?.endYear,
   };
 
   const rows = Array.isArray(payload?.cities) ? payload.cities : [];
   QUEBEC_CITIES = rows.map((row) => ({
     name: row.city,
     latitude: row.latitude,
-    longitude: row.longitude
+    longitude: row.longitude,
   }));
 
   cityMonthlyAvg = {};
