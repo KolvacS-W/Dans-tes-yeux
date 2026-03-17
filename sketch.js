@@ -1,8 +1,18 @@
 const DATA_FILE = "./data/quebec_city_monthly_temps_2000_2025.json";
 
 const MONTH_NAMES = [
-  "January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December",
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
 ];
 
 let QUEBEC_CITIES = [];
@@ -19,14 +29,22 @@ let dataMeta = null;
 let globalTempMin = null;
 let globalTempMax = null;
 let showCollaretteCurve = false;
-let collaretteDensity = 60;
+let collaretteDensity = 0;
 let densitySlider;
 let growingFiberCount = 300;
 let growingFiberSlider;
+let irisLineCount = 900;
+let irisLineCountSlider;
+let irisMinWidth = 0.22;
+let irisMinWidthSlider;
+let irisMaxWidth = 4.2;
+let irisMaxWidthSlider;
+let irisRandomness = 1.0;
+let irisRandomnessSlider;
 
 function setup() {
   const container = document.getElementById("app");
-  const canvas = createCanvas(getCanvasWidth(), 720);
+  const canvas = createCanvas(getCanvasWidth(), 800);
   canvas.parent(container);
 
   yearSlider = createSlider(2000, 2025, selectedYear, 1);
@@ -58,6 +76,38 @@ function setup() {
   growingFiberSlider.addClass("p5Slider");
   growingFiberSlider.input(() => {
     growingFiberCount = growingFiberSlider.value();
+    redraw();
+  });
+
+  irisLineCountSlider = createSlider(0, 3600, irisLineCount, 50);
+  irisLineCountSlider.parent(container);
+  irisLineCountSlider.addClass("p5Slider");
+  irisLineCountSlider.input(() => {
+    irisLineCount = irisLineCountSlider.value();
+    redraw();
+  });
+
+  irisMinWidthSlider = createSlider(0.05, 2.0, irisMinWidth, 0.05);
+  irisMinWidthSlider.parent(container);
+  irisMinWidthSlider.addClass("p5Slider");
+  irisMinWidthSlider.input(() => {
+    irisMinWidth = irisMinWidthSlider.value();
+    redraw();
+  });
+
+  irisMaxWidthSlider = createSlider(0.5, 6.0, irisMaxWidth, 0.1);
+  irisMaxWidthSlider.parent(container);
+  irisMaxWidthSlider.addClass("p5Slider");
+  irisMaxWidthSlider.input(() => {
+    irisMaxWidth = irisMaxWidthSlider.value();
+    redraw();
+  });
+
+  irisRandomnessSlider = createSlider(0, 1.0, irisRandomness, 0.05);
+  irisRandomnessSlider.parent(container);
+  irisRandomnessSlider.addClass("p5Slider");
+  irisRandomnessSlider.input(() => {
+    irisRandomness = irisRandomnessSlider.value();
     redraw();
   });
 
@@ -99,7 +149,11 @@ function drawHeader() {
   text(`Month: ${MONTH_NAMES[selectedMonth - 1]}`, 42, 78);
 
   if (dataMeta) {
-    text(`Source: ${dataMeta.source} (${dataMeta.startYear}–${dataMeta.endYear})`, 42, 98);
+    text(
+      `Source: ${dataMeta.source} (${dataMeta.startYear}–${dataMeta.endYear})`,
+      42,
+      98,
+    );
   } else {
     text("Source: local pre-downloaded dataset", 42, 98);
   }
@@ -107,9 +161,11 @@ function drawHeader() {
   textSize(10);
   fill(115, 90, 155);
   text(
-    `Ring lines: ${collaretteDensity}  ·  Growing fibers: ${growingFiberCount}  ·  [C] curve: ${showCollaretteCurve ? "ON" : "off"}` +
-    "  ·  Pupil = mean temp  ·  Cyan = cold  ·  Magenta = warm",
-    42, 118
+    `Ring lines: ${collaretteDensity}  ·  Growing fibers: ${growingFiberCount}  ·  Iris lines: ${irisLineCount}` +
+      `  ·  Width: ${irisMinWidth.toFixed(2)}–${irisMaxWidth.toFixed(1)}  ·  Rand: ${irisRandomness.toFixed(2)}` +
+      `  ·  [C] curve: ${showCollaretteCurve ? "ON" : "off"}  ·  Pupil = mean temp`,
+    42,
+    118,
   );
 }
 
@@ -129,12 +185,14 @@ function drawChart() {
     return { name: city.name, value: byMonth[selectedMonth] ?? null };
   });
 
-  const validValues = entries.map((d) => d.value).filter((v) => Number.isFinite(v));
+  const validValues = entries
+    .map((d) => d.value)
+    .filter((v) => Number.isFinite(v));
 
   if (!validValues.length) {
     drawCenteredText(
       `No data available for ${MONTH_NAMES[selectedMonth - 1]} ${selectedYear}`,
-      0.56
+      0.56,
     );
     return;
   }
@@ -151,7 +209,7 @@ function drawChart() {
   const irisR = Math.min(width, height) * 0.27;
 
   // Collarette lives in the 30–68 % radial zone of the iris
-  const colMinR = irisR * 0.30;
+  const colMinR = irisR * 0.3;
   const colMaxR = irisR * 0.68;
 
   // Build collarette points from temperature data
@@ -163,23 +221,29 @@ function drawChart() {
     colPoints.push({
       x: cx + cos(angle) * r,
       y: cy + sin(angle) * r,
-      angle, r,
+      angle,
+      r,
       value: entries[i].value,
       name: entries[i].name,
     });
   }
 
-  const monthlyMean = validValues.reduce((s, v) => s + v, 0) / validValues.length;
+  const monthlyMean =
+    validValues.reduce((s, v) => s + v, 0) / validValues.length;
   const meanR = map(monthlyMean, vMin, vMax, colMinR, colMaxR);
-  const pupilR = max(irisR * 0.10, meanR * 0.40);
+  // DATA→PUPIL: monthlyMean is mapped to meanR via the temperature range [vMin, vMax]
+  // → collarette radial zone [colMinR, colMaxR]. pupilR = 40% of meanR, so a warmer
+  // month (higher mean temp) produces a larger pupil. Floor at 10% of irisR.
+  const pupilR = max(irisR * 0.1, meanR * 0.7);
 
   // Seed random so fibers are stable for a given year+month
   randomSeed(selectedYear * 100 + selectedMonth);
 
   drawIrisBase(cx, cy, irisR);
-  drawPupil(cx, cy, pupilR);          // black base drawn first — fibers grow over it
+  drawPupil(cx, cy, pupilR); // black base drawn first — fibers grow over it
   drawIrisFibers(cx, cy, pupilR, irisR, colPoints);
-  if (growingFiberCount > 0) drawCollaretteGrowingFibers(cx, cy, colPoints, irisR);
+  if (growingFiberCount > 0)
+    drawCollaretteGrowingFibers(cx, cy, colPoints, irisR);
   if (collaretteDensity > 0) drawCollarette(cx, cy, colPoints);
   drawLimbus(cx, cy, irisR);
 }
@@ -195,9 +259,9 @@ function drawIrisBase(cx, cy, r) {
 // Spawns fiber seeds uniformly along the collarette curve, growing both
 // outward (to the limbus) and inward (to the pupil).
 function drawIrisFibers(cx, cy, pupilR, irisR, colPoints) {
-  const numSeeds = 1800;
+  const numSeeds = irisLineCount;
   const n = colPoints.length;
-  if (n < 2) return;
+  if (n < 2 || numSeeds === 0) return;
 
   for (let i = 0; i < numSeeds; i++) {
     const t = i / numSeeds;
@@ -212,21 +276,53 @@ function drawIrisFibers(cx, cy, pupilR, irisR, colPoints) {
     const baseAngle = atan2(sy - cy, sx - cx);
     const seedR = sqrt((sx - cx) * (sx - cx) + (sy - cy) * (sy - cy));
 
+    // Per-fiber width: random between irisMinWidth and irisMaxWidth, scaled by irisRandomness
+    // irisRandomness=0 → all fibers use midpoint width; irisRandomness=1 → fully random
+    const w = lerp(
+      irisMinWidth,
+      irisMaxWidth,
+      lerp(0.5, random(), irisRandomness),
+    );
+
     // Outward: collarette → limbus
     if (random() < 0.93) {
-      growFiber(cx, cy, sx, sy, baseAngle, seedR, irisR, true, 0, 1.0, 118);
+      growFiber(cx, cy, sx, sy, baseAngle, seedR, irisR, true, 0, w, 118);
     }
 
     // Inward: grow into the pupil so fiber tips define its organic edge
     if (random() < 0.72) {
-      growFiber(cx, cy, sx, sy, baseAngle + PI, seedR, pupilR * 0.74, false, 0, 0.72, 88);
+      growFiber(
+        cx,
+        cy,
+        sx,
+        sy,
+        baseAngle + PI,
+        seedR,
+        pupilR * 0.74,
+        false,
+        0,
+        w * 0.72,
+        88,
+      );
     }
   }
 }
 
 // Recursively grows a single iris fiber with slight angular noise and
 // occasional branching, mimicking the tree-like fibrous texture of the iris.
-function growFiber(cx, cy, startX, startY, angle, startR, targetR, goingOut, depth, thickness, parentAlpha) {
+function growFiber(
+  cx,
+  cy,
+  startX,
+  startY,
+  angle,
+  startR,
+  targetR,
+  goingOut,
+  depth,
+  thickness,
+  parentAlpha,
+) {
   if (depth > 2) return;
 
   let x = startX;
@@ -247,7 +343,7 @@ function growFiber(cx, cy, startX, startY, angle, startR, targetR, goingOut, dep
     const ny = y + sin(ang) * step;
     const currR = sqrt((nx - cx) * (nx - cx) + (ny - cy) * (ny - cy));
 
-    if (goingOut  && currR >= targetR * 0.97) break;
+    if (goingOut && currR >= targetR * 0.97) break;
     if (!goingOut && currR <= targetR * 1.04) break;
 
     // Color gradient:
@@ -255,9 +351,9 @@ function growFiber(cx, cy, startX, startY, angle, startR, targetR, goingOut, dep
     //   Inward  — same white-lavender (228,198,255) at collarette → bright white at pupil
     let r, g, b, alpha;
     if (goingOut) {
-      const ease = pow(t, 0.60);
+      const ease = pow(t, 0.6);
       r = lerp(228, 255, ease);
-      g = lerp(198, 16,  ease * ease);   // green falls fast → pure magenta
+      g = lerp(198, 16, ease * ease); // green falls fast → pure magenta
       b = lerp(255, 172, ease);
       alpha = lerp(parentAlpha, parentAlpha * 0.17, pow(t, 1.3));
     } else {
@@ -272,17 +368,28 @@ function growFiber(cx, cy, startX, startY, angle, startR, targetR, goingOut, dep
     }
 
     stroke(r, g, b, alpha);
-    strokeWeight(max(0.22, thickness * (1 - t * 0.65)));
+    strokeWeight(max(irisMinWidth, thickness * (1 - t * 0.65)));
     line(x, y, nx, ny);
 
     // Branching: spawns a diverging sub-fiber further along the main fiber
     if (depth < 2 && s > totalSteps * 0.25 && random() < 0.016) {
       const bDir = random() < 0.5 ? 1 : -1;
-      const bAngle = ang + bDir * random(0.20, 0.55);
+      const bAngle = ang + bDir * random(0.2, 0.55);
       const remR = abs(targetR - currR);
       if (remR > 10) {
-        growFiber(cx, cy, nx, ny, bAngle, currR, targetR, goingOut,
-                  depth + 1, thickness * 0.55, alpha * 0.62);
+        growFiber(
+          cx,
+          cy,
+          nx,
+          ny,
+          bAngle,
+          currR,
+          targetR,
+          goingOut,
+          depth + 1,
+          thickness * 0.55,
+          alpha * 0.62,
+        );
       }
     }
 
@@ -301,11 +408,11 @@ function drawCollaretteGrowingFibers(cx, cy, colPoints, irisR) {
   noFill();
 
   for (let i = 0; i < numFibers; i++) {
-    const t      = i / numFibers;
+    const t = i / numFibers;
     const rawIdx = t * n;
-    const i0     = floor(rawIdx) % n;
-    const i1     = (i0 + 1) % n;
-    const f      = rawIdx - floor(rawIdx);
+    const i0 = floor(rawIdx) % n;
+    const i1 = (i0 + 1) % n;
+    const f = rawIdx - floor(rawIdx);
     const sx = lerp(colPoints[i0].x, colPoints[i1].x, f);
     const sy = lerp(colPoints[i0].y, colPoints[i1].y, f);
     growRingOutwardFiber(cx, cy, sx, sy, irisR);
@@ -317,22 +424,28 @@ function drawCollaretteGrowingFibers(cx, cy, colPoints, irisR) {
 // Phase 2 (remaining steps): smoothly blends from tangential → radial outward.
 // Colour and style identical to growFiber outward fibers.
 function growRingOutwardFiber(cx, cy, sx, sy, irisR) {
-  const radAng  = atan2(sy - cy, sx - cx);
-  const startR  = sqrt((sx - cx) * (sx - cx) + (sy - cy) * (sy - cy));
+  const radAng = atan2(sy - cy, sx - cx);
+  const startR = sqrt((sx - cx) * (sx - cx) + (sy - cy) * (sy - cy));
 
   // Random tangential launch direction (CW or CCW) with slight jitter
   const tangDir = random() < 0.5 ? 1 : -1;
   const tangAng = radAng + tangDir * HALF_PI + random(-0.28, 0.28);
 
-  const step       = 2.0;
+  const step = 2.0;
   const totalSteps = max(5, floor((irisR - startR) / step));
-  const tangPhase     = 0.12;
-  const parentAlpha   = random(70, 135);
-  const baseThickness = random(0.35, 1.8);
+  const tangPhase = 0.12;
+  const parentAlpha = random(70, 135);
+  const baseThickness = lerp(
+    irisMinWidth,
+    irisMaxWidth,
+    lerp(0.5, random(), irisRandomness),
+  );
 
   let drift = 0;
-  let x = sx, y = sy;
-  let prevX = null, prevY = null;
+  let x = sx,
+    y = sy;
+  let prevX = null,
+    prevY = null;
 
   for (let s = 0; s < totalSteps; s++) {
     const t = s / totalSteps;
@@ -353,10 +466,14 @@ function growRingOutwardFiber(cx, cy, sx, sy, irisR) {
     if (currR >= irisR * 0.97) break;
 
     // Same gradient as growFiber outward: white-lavender → magenta
-    const ease = pow(t, 0.60);
-    stroke(lerp(228, 255, ease), lerp(198, 16, ease * ease), lerp(255, 172, ease),
-           lerp(parentAlpha, parentAlpha * 0.17, pow(t, 1.3)));
-    strokeWeight(max(0.22, baseThickness * (1 - t * 0.65)));
+    const ease = pow(t, 0.6);
+    stroke(
+      lerp(228, 255, ease),
+      lerp(198, 16, ease * ease),
+      lerp(255, 172, ease),
+      lerp(parentAlpha, parentAlpha * 0.17, pow(t, 1.3)),
+    );
+    strokeWeight(max(irisMinWidth, baseThickness * (1 - t * 0.65)));
 
     if (prevX !== null) line(prevX, prevY, nx, ny);
     prevX = nx;
@@ -382,14 +499,14 @@ function drawCollarette(cx, cy, points) {
   const numSamples = 400;
   const smooth = [];
   for (let i = 0; i < numSamples; i++) {
-    const t      = i / numSamples;
+    const t = i / numSamples;
     const rawSeg = t * n;
-    const seg    = floor(rawSeg);
-    const f      = rawSeg - seg;
-    const p0 = points[((seg - 1) + n) % n];
-    const p1 = points[seg          % n];
-    const p2 = points[(seg + 1)    % n];
-    const p3 = points[(seg + 2)    % n];
+    const seg = floor(rawSeg);
+    const f = rawSeg - seg;
+    const p0 = points[(seg - 1 + n) % n];
+    const p1 = points[seg % n];
+    const p2 = points[(seg + 1) % n];
+    const p3 = points[(seg + 2) % n];
     smooth.push({
       x: curvePoint(p0.x, p1.x, p2.x, p3.x, f),
       y: curvePoint(p0.y, p1.y, p2.y, p3.y, f),
@@ -400,10 +517,13 @@ function drawCollarette(cx, cy, points) {
   for (let trace = 0; trace < collaretteDensity; trace++) {
     // Outward-fiber start colour: white-lavender (228, 198, 255)
     stroke(228, 198, 255, random(50, 135));
-    strokeWeight(random(0.30, 2.2));
+    strokeWeight(
+      lerp(irisMinWidth, irisMaxWidth, lerp(0.5, random(), irisRandomness)),
+    );
 
     let drift = 0;
-    let prevX = null, prevY = null;
+    let prevX = null,
+      prevY = null;
 
     for (const sp of smooth) {
       // Same per-step wobble as growFiber — tiny drift, no base offset
@@ -554,14 +674,14 @@ function hydrateFromDataset(payload) {
 // ─── Window / layout helpers ───────────────────────────────────────────────────
 
 function keyPressed() {
-  if (key === 'c' || key === 'C') {
+  if (key === "c" || key === "C") {
     showCollaretteCurve = !showCollaretteCurve;
     redraw();
   }
 }
 
 function windowResized() {
-  resizeCanvas(getCanvasWidth(), 720);
+  resizeCanvas(getCanvasWidth(), 800);
   positionSliders();
   redraw();
 }
@@ -571,8 +691,14 @@ function getCanvasWidth() {
 }
 
 function positionSliders() {
-  yearSlider.position(42, height - 72);
-  monthSlider.position(42, height - 36);
-  densitySlider.position(400, height - 72);
-  growingFiberSlider.position(400, height - 36);
+  // Left column: data + iris count
+  yearSlider.position(42, height - 144);
+  monthSlider.position(42, height - 108);
+  irisLineCountSlider.position(42, height - 72);
+  irisRandomnessSlider.position(42, height - 36);
+  // Right column: ring/growing fibers + width range
+  densitySlider.position(400, height - 144);
+  growingFiberSlider.position(400, height - 108);
+  irisMinWidthSlider.position(400, height - 72);
+  irisMaxWidthSlider.position(400, height - 36);
 }
