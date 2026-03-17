@@ -155,10 +155,9 @@ function drawChart() {
   randomSeed(selectedYear * 100 + selectedMonth);
 
   drawIrisBase(cx, cy, irisR);
+  drawPupil(cx, cy, pupilR);          // black base drawn first — fibers grow over it
   drawIrisFibers(cx, cy, pupilR, irisR, colPoints);
   drawCollarette(colPoints, vMin, vMax);
-  drawPupilGlow(cx, cy, pupilR);
-  drawPupil(cx, cy, pupilR, monthlyMean);
   drawLimbus(cx, cy, irisR);
 }
 
@@ -195,9 +194,9 @@ function drawIrisFibers(cx, cy, pupilR, irisR, colPoints) {
       growFiber(cx, cy, sx, sy, baseAngle, seedR, irisR, true, 0, 1.0, 118);
     }
 
-    // Inward: collarette → pupil border
+    // Inward: grow into the pupil so fiber tips define its organic edge
     if (random() < 0.58) {
-      growFiber(cx, cy, sx, sy, baseAngle + PI, seedR, pupilR * 1.06, false, 0, 0.72, 88);
+      growFiber(cx, cy, sx, sy, baseAngle + PI, seedR, pupilR * 0.82, false, 0, 0.72, 88);
     }
   }
 }
@@ -306,41 +305,12 @@ function drawCollarette(points, vMin, vMax) {
   }
 }
 
-// Cyan-blue halo ring at the pupil–iris border, like the bright limbal ring
-// visible in close-up iris photography.
-function drawPupilGlow(cx, cy, pupilR) {
-  noFill();
-  for (let i = 9; i >= 1; i--) {
-    const ri = pupilR + i * 3.2;
-    const a = map(i, 9, 1, 7, 145);
-    const blue = map(i, 9, 1, 155, 255);
-    stroke(0, blue * 0.55, blue, a);
-    strokeWeight(lerp(7, 0.8, (9 - i) / 8));
-    circle(cx, cy, ri * 2);
-  }
-}
-
-// Draws the pupil: solid black disc, corneal specular highlights, and a
-// subtle mean-temperature label.
-function drawPupil(cx, cy, r, monthlyMean) {
+// Pure black pupil disc — drawn before fibers so inward fiber tips
+// overlap it and define its edge organically.
+function drawPupil(cx, cy, r) {
   noStroke();
   fill(0);
   circle(cx, cy, r * 2);
-
-  // Primary cornea highlight — classic teardrop reflection
-  fill(255, 255, 255, 165);
-  ellipse(cx - r * 0.30, cy - r * 0.30, r * 0.40, r * 0.24);
-
-  // Secondary faint highlight
-  fill(200, 225, 255, 85);
-  circle(cx + r * 0.20, cy - r * 0.22, r * 0.14);
-
-  // Mean temperature readout
-  noStroke();
-  fill(85, 108, 158);
-  textSize(max(7, r * 0.28));
-  textAlign(CENTER, CENTER);
-  text(`${monthlyMean.toFixed(1)}°C`, cx, cy + r * 0.14);
 }
 
 // Draws the limbus — the dark outer ring that bounds the iris.
