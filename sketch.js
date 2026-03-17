@@ -21,6 +21,8 @@ let globalTempMax = null;
 let showCollaretteCurve = false;
 let collaretteDensity = 60;
 let densitySlider;
+let growingFiberCount = 300;
+let growingFiberSlider;
 
 function setup() {
   const container = document.getElementById("app");
@@ -43,11 +45,19 @@ function setup() {
     redraw();
   });
 
-  densitySlider = createSlider(1, 300, collaretteDensity, 1);
+  densitySlider = createSlider(0, 300, collaretteDensity, 1);
   densitySlider.parent(container);
   densitySlider.addClass("p5Slider");
   densitySlider.input(() => {
     collaretteDensity = densitySlider.value();
+    redraw();
+  });
+
+  growingFiberSlider = createSlider(0, 1000, growingFiberCount, 10);
+  growingFiberSlider.parent(container);
+  growingFiberSlider.addClass("p5Slider");
+  growingFiberSlider.input(() => {
+    growingFiberCount = growingFiberSlider.value();
     redraw();
   });
 
@@ -97,7 +107,7 @@ function drawHeader() {
   textSize(10);
   fill(115, 90, 155);
   text(
-    `Collarette fibers: ${collaretteDensity}  ·  [C] precise curve: ${showCollaretteCurve ? "ON" : "off"}` +
+    `Ring lines: ${collaretteDensity}  ·  Growing fibers: ${growingFiberCount}  ·  [C] curve: ${showCollaretteCurve ? "ON" : "off"}` +
     "  ·  Pupil = mean temp  ·  Cyan = cold  ·  Magenta = warm",
     42, 118
   );
@@ -169,7 +179,8 @@ function drawChart() {
   drawIrisBase(cx, cy, irisR);
   drawPupil(cx, cy, pupilR);          // black base drawn first — fibers grow over it
   drawIrisFibers(cx, cy, pupilR, irisR, colPoints);
-  drawCollarette(cx, cy, colPoints);
+  if (growingFiberCount > 0) drawCollaretteGrowingFibers(cx, cy, colPoints, irisR);
+  if (collaretteDensity > 0) drawCollarette(cx, cy, colPoints);
   drawLimbus(cx, cy, irisR);
 }
 
@@ -275,6 +286,81 @@ function growFiber(cx, cy, startX, startY, angle, startR, targetR, goingOut, dep
       }
     }
 
+    x = nx;
+    y = ny;
+  }
+}
+
+// Seeds fibers uniformly along the collarette ring that first travel tangentially
+// for a short arc, then curve and grow outward to the limbus — mimicking how iris
+// fibers in a real eye appear to originate from the collarette structure.
+function drawCollaretteGrowingFibers(cx, cy, colPoints, irisR) {
+  const numFibers = growingFiberCount;
+  const n = colPoints.length;
+  if (n < 2) return;
+  noFill();
+
+  for (let i = 0; i < numFibers; i++) {
+    const t      = i / numFibers;
+    const rawIdx = t * n;
+    const i0     = floor(rawIdx) % n;
+    const i1     = (i0 + 1) % n;
+    const f      = rawIdx - floor(rawIdx);
+    const sx = lerp(colPoints[i0].x, colPoints[i1].x, f);
+    const sy = lerp(colPoints[i0].y, colPoints[i1].y, f);
+    growRingOutwardFiber(cx, cy, sx, sy, irisR);
+  }
+}
+
+// Each fiber starts tangentially (along the ring), then curves outward.
+// Phase 1 (first ~12% of steps): moves in the tangential direction.
+// Phase 2 (remaining steps): smoothly blends from tangential → radial outward.
+// Colour and style identical to growFiber outward fibers.
+function growRingOutwardFiber(cx, cy, sx, sy, irisR) {
+  const radAng  = atan2(sy - cy, sx - cx);
+  const startR  = sqrt((sx - cx) * (sx - cx) + (sy - cy) * (sy - cy));
+
+  // Random tangential launch direction (CW or CCW) with slight jitter
+  const tangDir = random() < 0.5 ? 1 : -1;
+  const tangAng = radAng + tangDir * HALF_PI + random(-0.28, 0.28);
+
+  const step       = 2.0;
+  const totalSteps = max(5, floor((irisR - startR) / step));
+  const tangPhase     = 0.12;
+  const parentAlpha   = random(70, 135);
+  const baseThickness = random(0.35, 1.8);
+
+  let drift = 0;
+  let x = sx, y = sy;
+  let prevX = null, prevY = null;
+
+  for (let s = 0; s < totalSteps; s++) {
+    const t = s / totalSteps;
+    drift += random(-0.022, 0.022);
+
+    let ang;
+    if (t < tangPhase) {
+      ang = tangAng + drift;
+    } else {
+      const blend = pow((t - tangPhase) / (1 - tangPhase), 0.55);
+      // drift weight fades to 0 as blend→1, so direction is exactly radAng at limbus
+      ang = lerp(tangAng, radAng, blend) + drift * (1 - blend);
+    }
+
+    const nx = x + cos(ang) * step;
+    const ny = y + sin(ang) * step;
+    const currR = sqrt((nx - cx) * (nx - cx) + (ny - cy) * (ny - cy));
+    if (currR >= irisR * 0.97) break;
+
+    // Same gradient as growFiber outward: white-lavender → magenta
+    const ease = pow(t, 0.60);
+    stroke(lerp(228, 255, ease), lerp(198, 16, ease * ease), lerp(255, 172, ease),
+           lerp(parentAlpha, parentAlpha * 0.17, pow(t, 1.3)));
+    strokeWeight(max(0.22, baseThickness * (1 - t * 0.65)));
+
+    if (prevX !== null) line(prevX, prevY, nx, ny);
+    prevX = nx;
+    prevY = ny;
     x = nx;
     y = ny;
   }
@@ -485,7 +571,8 @@ function getCanvasWidth() {
 }
 
 function positionSliders() {
-  densitySlider.position(42, height - 108);
   yearSlider.position(42, height - 72);
   monthSlider.position(42, height - 36);
+  densitySlider.position(400, height - 72);
+  growingFiberSlider.position(400, height - 36);
 }
