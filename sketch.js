@@ -18,10 +18,13 @@ let loadingMessage = "Loading local dataset...";
 let dataMeta = null;
 let globalTempMin = null;
 let globalTempMax = null;
+let showCollaretteCurve = false;
+let collaretteDensity = 60;
+let densitySlider;
 
 function setup() {
   const container = document.getElementById("app");
-  const canvas = createCanvas(getCanvasWidth(), 660);
+  const canvas = createCanvas(getCanvasWidth(), 720);
   canvas.parent(container);
 
   yearSlider = createSlider(2000, 2025, selectedYear, 1);
@@ -37,6 +40,14 @@ function setup() {
   monthSlider.addClass("p5Slider");
   monthSlider.input(() => {
     selectedMonth = monthSlider.value();
+    redraw();
+  });
+
+  densitySlider = createSlider(1, 300, collaretteDensity, 1);
+  densitySlider.parent(container);
+  densitySlider.addClass("p5Slider");
+  densitySlider.input(() => {
+    collaretteDensity = densitySlider.value();
     redraw();
   });
 
@@ -86,7 +97,8 @@ function drawHeader() {
   textSize(10);
   fill(115, 90, 155);
   text(
-    "Collarette shape = city temperatures  ·  Pupil size = monthly mean  ·  Cyan = cold  ·  Magenta = warm",
+    `Collarette fibers: ${collaretteDensity}  ·  [C] precise curve: ${showCollaretteCurve ? "ON" : "off"}` +
+    "  ·  Pupil = mean temp  ·  Cyan = cold  ·  Magenta = warm",
     42, 118
   );
 }
@@ -125,8 +137,8 @@ function drawChart() {
     : Math.ceil(Math.max(...validValues)) + 1;
 
   const cx = width * 0.5;
-  const cy = height * 0.55;
-  const irisR = Math.min(width, height) * 0.30;
+  const cy = height * 0.53;
+  const irisR = Math.min(width, height) * 0.27;
 
   // Collarette lives in the 30–68 % radial zone of the iris
   const colMinR = irisR * 0.30;
@@ -157,7 +169,7 @@ function drawChart() {
   drawIrisBase(cx, cy, irisR);
   drawPupil(cx, cy, pupilR);          // black base drawn first — fibers grow over it
   drawIrisFibers(cx, cy, pupilR, irisR, colPoints);
-  drawCollarette(colPoints, vMin, vMax);
+  drawCollarette(cx, cy, colPoints);
   drawLimbus(cx, cy, irisR);
 }
 
@@ -228,8 +240,8 @@ function growFiber(cx, cy, startX, startY, angle, startR, targetR, goingOut, dep
     if (!goingOut && currR <= targetR * 1.04) break;
 
     // Color gradient:
-    //   Outward — white-lavender at collarette → vivid magenta at limbus
-    //   Inward  — soft white at collarette → blue-white fade at pupil
+    //   Outward — white-lavender (228,198,255) at collarette → vivid magenta at limbus
+    //   Inward  — same white-lavender (228,198,255) at collarette → bright white at pupil
     let r, g, b, alpha;
     if (goingOut) {
       const ease = pow(t, 0.60);
@@ -238,12 +250,13 @@ function growFiber(cx, cy, startX, startY, angle, startR, targetR, goingOut, dep
       b = lerp(255, 172, ease);
       alpha = lerp(parentAlpha, parentAlpha * 0.17, pow(t, 1.3));
     } else {
-      // Dim at collarette, crescendo to bright white at the pupil border
+      // Same start colour as outward (white-lavender 228,198,255 at collarette),
+      // then brightens to near-white at the pupil border
       const ease = pow(t, 0.42);
-      r = lerp(130, 255, ease);
-      g = lerp(148, 238, ease);
-      b = lerp(210, 255, ease);
-      alpha = lerp(parentAlpha * 0.10, parentAlpha * 1.45, ease);
+      r = lerp(228, 255, ease);
+      g = lerp(198, 238, ease);
+      b = lerp(255, 255, ease);
+      alpha = lerp(parentAlpha, parentAlpha * 1.45, ease);
       alpha = min(alpha, 228);
     }
 
@@ -267,46 +280,69 @@ function growFiber(cx, cy, startX, startY, angle, startR, targetR, goingOut, dep
   }
 }
 
-// Renders the collarette as an organic fibrous texture rather than strict lines.
-// 3500 short random strokes are seeded densely along the data polygon, with
-// small positional jitter, producing a natural interwoven ring appearance.
-function drawCollarette(points, vMin, vMax) {
-  if (points.length < 2) return;
+// Renders the collarette using the exact same visual style as the radial iris
+// fibers (growFiber): each trace shares the same white-lavender→magenta colour
+// ramp, the same thickness taper, and the same per-step angular drift — but
+// runs tangentially around the Catmull-Rom smoothed data ring instead of
+// Draws the collarette as collaretteDensity iris-line traces that follow the
+// exact Catmull-Rom smooth data curve (no radial offset). Each trace carries
+// the same per-step angular drift as growFiber, so lines stay organic while
+// staying true to the curve shape. Colour = outward-fiber start (228,198,255).
+function drawCollarette(cx, cy, points) {
+  if (points.length < 3) return;
   const n = points.length;
-  const numStrokes = 3500;
+
+  // Smooth path via Catmull-Rom
+  const numSamples = 400;
+  const smooth = [];
+  for (let i = 0; i < numSamples; i++) {
+    const t      = i / numSamples;
+    const rawSeg = t * n;
+    const seg    = floor(rawSeg);
+    const f      = rawSeg - seg;
+    const p0 = points[((seg - 1) + n) % n];
+    const p1 = points[seg          % n];
+    const p2 = points[(seg + 1)    % n];
+    const p3 = points[(seg + 2)    % n];
+    smooth.push({
+      x: curvePoint(p0.x, p1.x, p2.x, p3.x, f),
+      y: curvePoint(p0.y, p1.y, p2.y, p3.y, f),
+    });
+  }
+
   noFill();
+  for (let trace = 0; trace < collaretteDensity; trace++) {
+    // Outward-fiber start colour: white-lavender (228, 198, 255)
+    stroke(228, 198, 255, random(50, 135));
+    strokeWeight(random(0.30, 2.2));
 
-  for (let i = 0; i < numStrokes; i++) {
-    const t = i / numStrokes;
-    const rawIdx = t * n;
-    const i0 = floor(rawIdx) % n;
-    const i1 = (i0 + 1) % n;
-    const f = rawIdx - floor(rawIdx);
+    let drift = 0;
+    let prevX = null, prevY = null;
 
-    // Interpolated position on collarette polygon
-    const px = lerp(points[i0].x, points[i1].x, f);
-    const py = lerp(points[i0].y, points[i1].y, f);
-    const val = lerp(points[i0].value, points[i1].value, f);
+    for (const sp of smooth) {
+      // Same per-step wobble as growFiber — tiny drift, no base offset
+      drift += random(-0.022, 0.022);
+      const radAng = atan2(sp.y - cy, sp.x - cx);
+      const wx = sp.x + cos(radAng) * drift * 8;
+      const wy = sp.y + sin(radAng) * drift * 8;
+      if (prevX !== null) line(prevX, prevY, wx, wy);
+      prevX = wx;
+      prevY = wy;
+    }
+  }
 
-    // Temperature colour: cold = cyan, warm = magenta
-    const tc = constrain(map(val, vMin, vMax, 0, 1), 0, 1);
-    const cr = lerp(80,  255, tc);
-    const cg = lerp(215,  48, tc);
-    const cb = lerp(255, 198, tc);
-
-    // Small random offset from the path so strokes form a fuzzy band
-    const ox = random(-7, 7);
-    const oy = random(-7, 7);
-    const sx = px + ox;
-    const sy = py + oy;
-
-    // Each stroke is short and randomly angled
-    const ang = random(TWO_PI);
-    const len = random(3, 20);
-
-    stroke(cr, cg, cb, random(38, 185));
-    strokeWeight(random(0.4, 2.6));
-    line(sx, sy, sx + cos(ang) * len, sy + sin(ang) * len);
+  // Optional precise white reference curve (press C)
+  if (showCollaretteCurve) {
+    noFill();
+    stroke(255, 255, 255, 200);
+    strokeWeight(1.4);
+    beginShape();
+    curveVertex(points[n - 2].x, points[n - 2].y);
+    curveVertex(points[n - 1].x, points[n - 1].y);
+    for (const p of points) curveVertex(p.x, p.y);
+    curveVertex(points[0].x, points[0].y);
+    curveVertex(points[1].x, points[1].y);
+    endShape();
   }
 }
 
@@ -431,8 +467,15 @@ function hydrateFromDataset(payload) {
 
 // ─── Window / layout helpers ───────────────────────────────────────────────────
 
+function keyPressed() {
+  if (key === 'c' || key === 'C') {
+    showCollaretteCurve = !showCollaretteCurve;
+    redraw();
+  }
+}
+
 function windowResized() {
-  resizeCanvas(getCanvasWidth(), 660);
+  resizeCanvas(getCanvasWidth(), 720);
   positionSliders();
   redraw();
 }
@@ -442,6 +485,7 @@ function getCanvasWidth() {
 }
 
 function positionSliders() {
-  yearSlider.position(42, height - 68);
+  densitySlider.position(42, height - 108);
+  yearSlider.position(42, height - 72);
   monthSlider.position(42, height - 36);
 }
