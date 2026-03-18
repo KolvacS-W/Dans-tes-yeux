@@ -242,39 +242,39 @@ function drawHeader() {
 
   fill(210, 185, 245);
   textSize(24);
-  text("Dans tes yeux — Quebec Monthly Climate", 40, 24);
+  text("Dans tes yeux", 40, 24);
 
-  textSize(14);
-  fill(165, 140, 210);
-  text(`Year: ${selectedYear}`, 42, 58);
-  text(`Month: ${MONTH_NAMES[selectedMonth - 1]}`, 42, 78);
+  // textSize(14);
+  // fill(165, 140, 210);
+  // text(`Year: ${selectedYear}`, 42, 58);
+  // text(`Month: ${MONTH_NAMES[selectedMonth - 1]}`, 42, 78);
 
-  if (dataMeta) {
-    const precipYears = `${dataMeta.startYear}–${dataMeta.endYear}`;
-    const tempYears = tempDataMeta
-      ? `${tempDataMeta.startYear}–${tempDataMeta.endYear}`
-      : precipYears;
-    text(
-      `Ring: precipitation (${precipYears}) · Color/Pupil: temperature (${tempYears})`,
-      42,
-      98,
-    );
-  } else {
-    text("Source: local pre-downloaded dataset", 42, 98);
-  }
+  // if (dataMeta) {
+  //   const precipYears = `${dataMeta.startYear}–${dataMeta.endYear}`;
+  //   const tempYears = tempDataMeta
+  //     ? `${tempDataMeta.startYear}–${tempDataMeta.endYear}`
+  //     : precipYears;
+  //   text(
+  //     `Ring: precipitation (${precipYears}) · Color/Pupil: temperature (${tempYears})`,
+  //     42,
+  //     98,
+  //   );
+  // } else {
+  //   text("Source: local pre-downloaded dataset", 42, 98);
+  // }
 
-  textSize(10);
-  fill(115, 90, 155);
-  text(
-    `[C] precision curve: ${showCollaretteCurve ? "ON" : "off"}  ·  Ring = precipitation · Pupil/Color = temperature`,
-    42,
-    118,
-  );
-  text(
-    `[T] temp→pupil guide: ${showTempPupilGuide ? "ON" : "off"}  ·  [P] precip axes: ${showPrecipAxes ? "ON" : "off"}`,
-    42,
-    132,
-  );
+  // textSize(10);
+  // fill(115, 90, 155);
+  // text(
+  //   `[C] precision curve: ${showCollaretteCurve ? "ON" : "off"}  ·  Ring = precipitation · Pupil/Color = temperature`,
+  //   42,
+  //   118,
+  // );
+  // text(
+  //   `[T] temp→pupil guide: ${showTempPupilGuide ? "ON" : "off"}  ·  [P] precip axes: ${showPrecipAxes ? "ON" : "off"}`,
+  //   42,
+  //   132,
+  // );
 }
 
 function drawCenteredText(message, yRatio) {
@@ -319,7 +319,7 @@ function drawChart() {
   const vMax = max(vMin + 1, PRECIP_Y_MAX_AT_EDGE);
 
   const cx = width * 0.5;
-  const cy = height * 0.53;
+  const cy = height * 0.5;
   const irisR = Math.min(width, height) * 0.27;
 
   // Collarette (line chart ring): vMax lands at the edge of the iris.
