@@ -18,7 +18,10 @@ const MONTH_NAMES = [
 
 // Precipitation value (mm) that maps to the iris edge for the ring chart.
 // Increase/decrease this to rescale the precipitation y-axis.
-const PRECIP_Y_MAX_AT_EDGE = 250;
+const PRECIP_Y_MAX_AT_EDGE = 500;
+// Where precipitation y=0 starts on the iris radius (0..1).
+// 0.0 = center, 1.0 = iris edge. Higher values reduce chart radial variation.
+const PRECIP_Y_AXIS_START_RADIUS_NORM = 0.45;
 
 let QUEBEC_CITIES = [];
 let cityMonthlyPrecip = {};
@@ -55,7 +58,7 @@ let irisMaxWidth = 5.2;
 let irisMaxWidthSlider;
 let irisRandomness = 1.0;
 let irisRandomnessSlider;
-let colorVariance = 0.3;
+let colorVariance = 0.5;
 let colorVarianceSlider;
 
 // ─── Data-driven iris colour palettes ──────────────────────────────────────────
@@ -320,7 +323,8 @@ function drawChart() {
   const irisR = Math.min(width, height) * 0.27;
 
   // Collarette (line chart ring): vMax lands at the edge of the iris.
-  const colMinR = irisR * 0.3;
+  // y-axis start radius is controlled by PRECIP_Y_AXIS_START_RADIUS_NORM.
+  const colMinR = irisR * constrain(PRECIP_Y_AXIS_START_RADIUS_NORM, 0, 0.96);
   const colMaxR = irisR * 0.97;
 
   // Build collarette points from precipitation data (ring shape only)
@@ -355,7 +359,7 @@ function drawChart() {
     ? globalTempMax
     : Math.ceil(Math.max(...validTempValues)) + 1;
   const meanR = map(monthlyTempMean, tMin, tMax, colMinR, colMaxR);
-  const pupilR = max(irisR * 0.1, meanR * 0.7);
+  const pupilR = max(irisR * 0.1, meanR * 0.6);
 
   // Colour palette driven by monthly mean temperature (0=coldest→blue, 1=warmest→brown)
   const tempNorm = constrain(map(monthlyTempMean, tMin, tMax, 0, 1), 0, 1);
