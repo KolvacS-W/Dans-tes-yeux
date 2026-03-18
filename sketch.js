@@ -35,14 +35,16 @@ let growingFiberOutward = 300;
 let growingFiberOutwardSlider;
 let growingFiberInward = 50;
 let growingFiberInwardSlider;
-let irisLineCount = 900;
+let irisLineCount = 500;
 let irisLineCountSlider;
-let irisMinWidth = 0.22;
+let irisMinWidth = 0.5;
 let irisMinWidthSlider;
-let irisMaxWidth = 4.2;
+let irisMaxWidth = 5.2;
 let irisMaxWidthSlider;
 let irisRandomness = 1.0;
 let irisRandomnessSlider;
+let colorVariance = 0.3;
+let colorVarianceSlider;
 
 // ─── Temperature-driven iris colour palettes ───────────────────────────────────
 // Each palette defines the fiber gradient (collarette→limbus) and the inward
@@ -59,21 +61,21 @@ function hex(h) {
 
 const PALETTE_COLD = {
   // Blue eye  (coldest months)
-  fiberStart: hex("#b9dcff"), // vivid cobalt-blue at collarette
+  fiberStart: hex("#83bcf519"), // vivid cobalt-blue at collarette
   fiberEnd: hex("#0539a0"), // deep saturated navy at limbus
-  inwardEnd: hex("#b9dcff"), // icy blue-white at pupil
+  inwardEnd: hex("#8bc0f4"), // icy blue-white at pupil
   base: hex("#01021e"), // near-black deep navy background
 };
 const PALETTE_HAZEL = {
   // Hazel eye  (mid-range months)
-  fiberStart: hex("#f3b55f"), // golden amber at collarette
+  fiberStart: hex("#f4a6385d"), // golden amber at collarette
   fiberEnd: hex("#2e4614"), // deep olive green at limbus
   inwardEnd: hex("#f0d7a5"), // warm cream at pupil
   base: hex("#070402"), // near-black warm-dark background
 };
 const PALETTE_WARM = {
   // Brown eye  (warmest months)
-  fiberStart: hex("#f87616"), // vivid burnt-orange amber at collarette
+  fiberStart: hex("#e271204f"), // vivid burnt-orange amber at collarette
   fiberEnd: hex("#411a04"), // deep rich dark-brown at limbus
   inwardEnd: hex("#ffbc5a"), // warm golden-orange at pupil
   base: hex("#120501"), // near-black reddish-brown background
@@ -179,6 +181,14 @@ function setup() {
   irisRandomnessSlider.addClass("p5Slider");
   irisRandomnessSlider.input(() => {
     irisRandomness = irisRandomnessSlider.value();
+    redraw();
+  });
+
+  colorVarianceSlider = createSlider(0, 1.0, colorVariance, 0.05);
+  colorVarianceSlider.parent(container);
+  colorVarianceSlider.addClass("p5Slider");
+  colorVarianceSlider.input(() => {
+    colorVariance = colorVarianceSlider.value();
     redraw();
   });
 
@@ -426,6 +436,15 @@ function growFiber(
   const step = 1.8;
   const totalSteps = max(2, floor(abs(targetR - startR) / step));
 
+  // Per-fiber color variance: one random RGB offset applied uniformly to all
+  // gradient endpoints so the fiber shifts hue slightly while keeping its gradient shape.
+  const cv = colorVariance * 55;
+  const cl = (v) => constrain(v, 0, 255);
+  const dr = random(-cv, cv), dg = random(-cv, cv), db = random(-cv, cv);
+  const pStart  = palette.fiberStart.map((c, i) => cl(c + [dr, dg, db][i]));
+  const pEnd    = palette.fiberEnd.map((c, i)   => cl(c + [dr, dg, db][i]));
+  const pInward = palette.inwardEnd.map((c, i)  => cl(c + [dr, dg, db][i]));
+
   for (let s = 0; s < totalSteps; s++) {
     const t = s / totalSteps; // 0 = at collarette, 1 = at target
 
@@ -439,24 +458,19 @@ function growFiber(
     if (goingOut && currR >= targetR * 0.97) break;
     if (!goingOut && currR <= targetR * 1.04) break;
 
-    // Color gradient driven by palette:
-    //   Outward — palette.fiberStart at collarette → palette.fiberEnd at limbus
-    //   Inward  — palette.fiberStart at collarette → palette.inwardEnd at pupil
+    // Color gradient using perturbed palette endpoints
     let r, g, b, alpha;
-    const fs = palette.fiberStart;
     if (goingOut) {
-      const fe = palette.fiberEnd;
       const ease = pow(t, 0.6);
-      r = lerp(fs[0], fe[0], ease);
-      g = lerp(fs[1], fe[1], ease);
-      b = lerp(fs[2], fe[2], ease);
+      r = lerp(pStart[0], pEnd[0], ease);
+      g = lerp(pStart[1], pEnd[1], ease);
+      b = lerp(pStart[2], pEnd[2], ease);
       alpha = lerp(parentAlpha, parentAlpha * 0.17, pow(t, 1.3));
     } else {
-      const ie = palette.inwardEnd;
       const ease = pow(t, 0.42);
-      r = lerp(fs[0], ie[0], ease);
-      g = lerp(fs[1], ie[1], ease);
-      b = lerp(fs[2], ie[2], ease);
+      r = lerp(pStart[0], pInward[0], ease);
+      g = lerp(pStart[1], pInward[1], ease);
+      b = lerp(pStart[2], pInward[2], ease);
       alpha = lerp(parentAlpha, parentAlpha * 1.45, ease);
       alpha = min(alpha, 228);
     }
@@ -529,12 +543,21 @@ function growRingOutwardFiber(cx, cy, sx, sy, irisR, palette) {
   const step = 2.0;
   const totalSteps = max(5, floor((irisR - startR) / step));
   const tangPhase = 0.12;
-  const parentAlpha = random(70, 135);
+  // Cap at 118 — the fixed parentAlpha of regular outward iris fibers — so growing
+  // fibers never exceed the brightness of the iris layer behind them at any radius.
+  const parentAlpha = random(70, 118);
   const baseThickness = lerp(
     irisMinWidth,
     irisMaxWidth,
     lerp(0.5, random(), irisRandomness),
   );
+
+  // Per-fiber color variance
+  const cv = colorVariance * 55;
+  const cl = (v) => constrain(v, 0, 255);
+  const dr = random(-cv, cv), dg = random(-cv, cv), db = random(-cv, cv);
+  const pStart = palette.fiberStart.map((c, i) => cl(c + [dr, dg, db][i]));
+  const pEnd   = palette.fiberEnd.map((c, i)   => cl(c + [dr, dg, db][i]));
 
   let drift = 0;
   let x = sx,
@@ -560,17 +583,16 @@ function growRingOutwardFiber(cx, cy, sx, sy, irisR, palette) {
     const currR = sqrt((nx - cx) * (nx - cx) + (ny - cy) * (ny - cy));
     if (currR >= irisR * 0.97) break;
 
-    // Same gradient as growFiber outward, driven by palette
-    const ease = pow(t, 0.6);
-    const fs = palette.fiberStart,
-      fe = palette.fiberEnd;
+    // Color driven by radial distance, using per-fiber perturbed palette
+    const rNorm = constrain((currR - startR) / (irisR - startR), 0, 1);
+    const ease = pow(rNorm, 0.6);
     stroke(
-      lerp(fs[0], fe[0], ease),
-      lerp(fs[1], fe[1], ease),
-      lerp(fs[2], fe[2], ease),
-      lerp(parentAlpha, parentAlpha * 0.17, pow(t, 1.3)),
+      lerp(pStart[0], pEnd[0], ease),
+      lerp(pStart[1], pEnd[1], ease),
+      lerp(pStart[2], pEnd[2], ease),
+      lerp(parentAlpha, parentAlpha * 0.17, pow(rNorm, 1.3)),
     );
-    strokeWeight(max(irisMinWidth, baseThickness * (1 - t * 0.65)));
+    strokeWeight(max(irisMinWidth, baseThickness * (1 - rNorm * 0.65)));
 
     if (prevX !== null) line(prevX, prevY, nx, ny);
     prevX = nx;
@@ -622,6 +644,13 @@ function growRingInwardFiber(cx, cy, sx, sy, pupilR, palette) {
     lerp(0.5, random(), irisRandomness),
   );
 
+  // Per-fiber color variance
+  const cv = colorVariance * 55;
+  const cl = (v) => constrain(v, 0, 255);
+  const dr = random(-cv, cv), dg = random(-cv, cv), db = random(-cv, cv);
+  const pStart  = palette.fiberStart.map((c, i) => cl(c + [dr, dg, db][i]));
+  const pInward = palette.inwardEnd.map((c, i)  => cl(c + [dr, dg, db][i]));
+
   let drift = 0;
   let x = sx,
     y = sy;
@@ -641,14 +670,12 @@ function growRingInwardFiber(cx, cy, sx, sy, pupilR, palette) {
     const currR = sqrt((nx - cx) * (nx - cx) + (ny - cy) * (ny - cy));
     if (currR <= pupilR * 1.04) break;
 
-    // Inward gradient: fiberStart at collarette → inwardEnd near pupil, brightening
-    const fs = palette.fiberStart,
-      ie = palette.inwardEnd;
+    // Inward gradient using per-fiber perturbed palette
     const ease = pow(t, 0.42);
     stroke(
-      lerp(fs[0], ie[0], ease),
-      lerp(fs[1], ie[1], ease),
-      lerp(fs[2], ie[2], ease),
+      lerp(pStart[0], pInward[0], ease),
+      lerp(pStart[1], pInward[1], ease),
+      lerp(pStart[2], pInward[2], ease),
       min(lerp(parentAlpha, parentAlpha * 1.45, ease), 228),
     );
     strokeWeight(max(irisMinWidth, baseThickness * (1 - t * 0.65)));
@@ -885,6 +912,7 @@ function positionSliders() {
     densitySlider,
     growingFiberOutwardSlider,
     growingFiberInwardSlider,
+    colorVarianceSlider,
   ];
   sliders.forEach((s, i) => {
     s.position(sx, height - SLIDER_ROW_H * (sliders.length - i));
@@ -925,6 +953,7 @@ function drawSliderLabels() {
       range: "0 – 1000",
       val: String(growingFiberInward),
     },
+    { name: "Color variance", range: "0 – 1", val: colorVariance.toFixed(2) },
   ];
 
   noStroke();
