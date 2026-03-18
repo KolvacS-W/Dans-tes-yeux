@@ -18,7 +18,7 @@ const MONTH_NAMES = [
 let QUEBEC_CITIES = [];
 let cityMonthlyAvg = {};
 let availableYears = [];
-let selectedYear = 2020;
+let selectedYear = 2003;
 let selectedMonth = 1;
 let yearSlider;
 let monthSlider;
@@ -48,26 +48,33 @@ let irisRandomnessSlider;
 // Colors are hex strings so the IDE shows inline swatches for easy tweaking.
 
 function hex(h) {
-  return [parseInt(h.slice(1,3),16), parseInt(h.slice(3,5),16), parseInt(h.slice(5,7),16)];
+  return [
+    parseInt(h.slice(1, 3), 16),
+    parseInt(h.slice(3, 5), 16),
+    parseInt(h.slice(5, 7), 16),
+  ];
 }
 
-const PALETTE_COLD = {          // Blue eye  (coldest months)
-  fiberStart: hex('#7db9ff'),   // vivid cobalt-blue at collarette
-  fiberEnd:   hex('#0516a0'),   // deep saturated navy at limbus
-  inwardEnd:  hex('#b9dcff'),   // icy blue-white at pupil
-  base:       hex('#01021e'),   // near-black deep navy background
+const PALETTE_COLD = {
+  // Blue eye  (coldest months)
+  fiberStart: hex("#b9dcff"), // vivid cobalt-blue at collarette
+  fiberEnd: hex("#0539a0"), // deep saturated navy at limbus
+  inwardEnd: hex("#b9dcff"), // icy blue-white at pupil
+  base: hex("#01021e"), // near-black deep navy background
 };
-const PALETTE_HAZEL = {         // Hazel eye  (mid-range months)
-  fiberStart: hex('#d2b25a'),   // golden amber at collarette
-  fiberEnd:   hex('#2e4614'),   // deep olive green at limbus
-  inwardEnd:  hex('#f0d7a5'),   // warm cream at pupil
-  base:       hex('#070402'),   // near-black warm-dark background
+const PALETTE_HAZEL = {
+  // Hazel eye  (mid-range months)
+  fiberStart: hex("#f3b55f"), // golden amber at collarette
+  fiberEnd: hex("#2e4614"), // deep olive green at limbus
+  inwardEnd: hex("#f0d7a5"), // warm cream at pupil
+  base: hex("#070402"), // near-black warm-dark background
 };
-const PALETTE_WARM = {          // Brown eye  (warmest months)
-  fiberStart: hex('#f87616'),   // vivid burnt-orange amber at collarette
-  fiberEnd:   hex('#732c04'),   // deep rich dark-brown at limbus
-  inwardEnd:  hex('#ffbc5a'),   // warm golden-orange at pupil
-  base:       hex('#120501'),   // near-black reddish-brown background
+const PALETTE_WARM = {
+  // Brown eye  (warmest months)
+  fiberStart: hex("#f87616"), // vivid burnt-orange amber at collarette
+  fiberEnd: hex("#411a04"), // deep rich dark-brown at limbus
+  inwardEnd: hex("#ffbc5a"), // warm golden-orange at pupil
+  base: hex("#120501"), // near-black reddish-brown background
 };
 
 // Smoothly interpolates between cold→hazel→warm based on tempNorm ∈ [0,1].
@@ -75,16 +82,24 @@ function getIrisPalette(t) {
   const ss = (x) => x * x * (3 - 2 * x); // smoothstep
   let f, from, to;
   if (t <= 0.5) {
-    f = ss(t * 2);       from = PALETTE_COLD;  to = PALETTE_HAZEL;
+    f = ss(t * 2);
+    from = PALETTE_COLD;
+    to = PALETTE_HAZEL;
   } else {
-    f = ss((t - 0.5) * 2); from = PALETTE_HAZEL; to = PALETTE_WARM;
+    f = ss((t - 0.5) * 2);
+    from = PALETTE_HAZEL;
+    to = PALETTE_WARM;
   }
-  const lc = (a, b) => [lerp(a[0],b[0],f), lerp(a[1],b[1],f), lerp(a[2],b[2],f)];
+  const lc = (a, b) => [
+    lerp(a[0], b[0], f),
+    lerp(a[1], b[1], f),
+    lerp(a[2], b[2], f),
+  ];
   return {
     fiberStart: lc(from.fiberStart, to.fiberStart),
-    fiberEnd:   lc(from.fiberEnd,   to.fiberEnd),
-    inwardEnd:  lc(from.inwardEnd,  to.inwardEnd),
-    base:       lc(from.base,       to.base),
+    fiberEnd: lc(from.fiberEnd, to.fiberEnd),
+    inwardEnd: lc(from.inwardEnd, to.inwardEnd),
+    base: lc(from.base, to.base),
   };
 }
 
@@ -209,7 +224,11 @@ function drawHeader() {
 
   textSize(10);
   fill(115, 90, 155);
-  text(`[C] precision curve: ${showCollaretteCurve ? "ON" : "off"}  ·  Pupil size = mean temperature`, 42, 118);
+  text(
+    `[C] precision curve: ${showCollaretteCurve ? "ON" : "off"}  ·  Pupil size = mean temperature`,
+    42,
+    118,
+  );
 }
 
 function drawCenteredText(message, yRatio) {
@@ -281,7 +300,7 @@ function drawChart() {
 
   // Colour palette driven by monthly mean temperature (0=coldest→blue, 1=warmest→brown)
   const tempNorm = constrain(map(monthlyMean, vMin, vMax, 0, 1), 0, 1);
-  const palette  = getIrisPalette(tempNorm);
+  const palette = getIrisPalette(tempNorm);
 
   // Seed random so fibers are stable for a given year+month
   randomSeed(selectedYear * 100 + selectedMonth);
@@ -333,14 +352,37 @@ function drawIrisFibers(cx, cy, pupilR, irisR, colPoints, palette) {
 
     // Outward: collarette → limbus
     if (random() < 0.93) {
-      growFiber(cx, cy, sx, sy, baseAngle, seedR, irisR, true, 0, w, 118, palette);
+      growFiber(
+        cx,
+        cy,
+        sx,
+        sy,
+        baseAngle,
+        seedR,
+        irisR,
+        true,
+        0,
+        w,
+        118,
+        palette,
+      );
     }
 
     // Inward: grow into the pupil so fiber tips define its organic edge
     if (random() < 0.72) {
       growFiber(
-        cx, cy, sx, sy, baseAngle + PI, seedR, pupilR * 0.74,
-        false, 0, w * 0.72, 88, palette,
+        cx,
+        cy,
+        sx,
+        sy,
+        baseAngle + PI,
+        seedR,
+        pupilR * 0.74,
+        false,
+        0,
+        w * 0.72,
+        88,
+        palette,
       );
     }
   }
@@ -349,8 +391,18 @@ function drawIrisFibers(cx, cy, pupilR, irisR, colPoints, palette) {
 // Recursively grows a single iris fiber with slight angular noise and
 // occasional branching, mimicking the tree-like fibrous texture of the iris.
 function growFiber(
-  cx, cy, startX, startY, angle, startR, targetR,
-  goingOut, depth, thickness, parentAlpha, palette,
+  cx,
+  cy,
+  startX,
+  startY,
+  angle,
+  startR,
+  targetR,
+  goingOut,
+  depth,
+  thickness,
+  parentAlpha,
+  palette,
 ) {
   if (depth > 2) return;
 
@@ -381,14 +433,14 @@ function growFiber(
     let r, g, b, alpha;
     const fs = palette.fiberStart;
     if (goingOut) {
-      const fe   = palette.fiberEnd;
+      const fe = palette.fiberEnd;
       const ease = pow(t, 0.6);
       r = lerp(fs[0], fe[0], ease);
       g = lerp(fs[1], fe[1], ease);
       b = lerp(fs[2], fe[2], ease);
       alpha = lerp(parentAlpha, parentAlpha * 0.17, pow(t, 1.3));
     } else {
-      const ie   = palette.inwardEnd;
+      const ie = palette.inwardEnd;
       const ease = pow(t, 0.42);
       r = lerp(fs[0], ie[0], ease);
       g = lerp(fs[1], ie[1], ease);
@@ -408,8 +460,18 @@ function growFiber(
       const remR = abs(targetR - currR);
       if (remR > 10) {
         growFiber(
-          cx, cy, nx, ny, bAngle, currR, targetR,
-          goingOut, depth + 1, thickness * 0.55, alpha * 0.62, palette,
+          cx,
+          cy,
+          nx,
+          ny,
+          bAngle,
+          currR,
+          targetR,
+          goingOut,
+          depth + 1,
+          thickness * 0.55,
+          alpha * 0.62,
+          palette,
         );
       }
     }
@@ -488,7 +550,8 @@ function growRingOutwardFiber(cx, cy, sx, sy, irisR, palette) {
 
     // Same gradient as growFiber outward, driven by palette
     const ease = pow(t, 0.6);
-    const fs = palette.fiberStart, fe = palette.fiberEnd;
+    const fs = palette.fiberStart,
+      fe = palette.fiberEnd;
     stroke(
       lerp(fs[0], fe[0], ease),
       lerp(fs[1], fe[1], ease),
@@ -715,32 +778,54 @@ function getCanvasWidth() {
 
 // Ordered top → bottom; must match the SLIDER_DEFS order in drawSliderLabels
 const SLIDER_ROW_H = 32;
-const SLIDER_W     = 185;
+const SLIDER_W = 185;
 
 function positionSliders() {
   const sx = width - SLIDER_W - 22;
   const sliders = [
-    yearSlider, monthSlider, irisLineCountSlider, irisRandomnessSlider,
-    irisMinWidthSlider, irisMaxWidthSlider, densitySlider, growingFiberSlider,
+    yearSlider,
+    monthSlider,
+    irisLineCountSlider,
+    irisRandomnessSlider,
+    irisMinWidthSlider,
+    irisMaxWidthSlider,
+    densitySlider,
+    growingFiberSlider,
   ];
   sliders.forEach((s, i) => {
     s.position(sx, height - SLIDER_ROW_H * (sliders.length - i));
-    s.style('width', SLIDER_W + 'px');
+    s.style("width", SLIDER_W + "px");
   });
 }
 
 function drawSliderLabels() {
-  const sx = width - SLIDER_W - 22;  // slider left edge
+  const sx = width - SLIDER_W - 22; // slider left edge
 
   const defs = [
-    { name: "Year",             range: "2000 – 2025",  val: String(selectedYear) },
-    { name: "Month",            range: "Jan – Dec",    val: MONTH_NAMES[selectedMonth - 1] },
-    { name: "Iris lines",       range: "0 – 3600",     val: String(irisLineCount) },
-    { name: "Width randomness", range: "0 – 1",        val: irisRandomness.toFixed(2) },
-    { name: "Min line width",   range: "0.05 – 2.0",   val: irisMinWidth.toFixed(2) },
-    { name: "Max line width",   range: "0.5 – 6.0",    val: irisMaxWidth.toFixed(1) },
-    { name: "Ring lines",       range: "0 – 300",      val: String(collaretteDensity) },
-    { name: "Growing fibers",   range: "0 – 1000",     val: String(growingFiberCount) },
+    { name: "Year", range: "2000 – 2025", val: String(selectedYear) },
+    { name: "Month", range: "Jan – Dec", val: MONTH_NAMES[selectedMonth - 1] },
+    { name: "Iris lines", range: "0 – 3600", val: String(irisLineCount) },
+    {
+      name: "Width randomness",
+      range: "0 – 1",
+      val: irisRandomness.toFixed(2),
+    },
+    {
+      name: "Min line width",
+      range: "0.05 – 2.0",
+      val: irisMinWidth.toFixed(2),
+    },
+    {
+      name: "Max line width",
+      range: "0.5 – 6.0",
+      val: irisMaxWidth.toFixed(1),
+    },
+    { name: "Ring lines", range: "0 – 300", val: String(collaretteDensity) },
+    {
+      name: "Growing fibers",
+      range: "0 – 1000",
+      val: String(growingFiberCount),
+    },
   ];
 
   noStroke();
@@ -748,8 +833,8 @@ function drawSliderLabels() {
 
   defs.forEach((d, i) => {
     const sliderY = height - SLIDER_ROW_H * (defs.length - i);
-    const midY    = sliderY + 9;  // vertical centre of the slider thumb
-    const lx      = sx - 10;      // label right edge
+    const midY = sliderY + 9; // vertical centre of the slider thumb
+    const lx = sx - 10; // label right edge
 
     // Slider name
     fill(200, 175, 245);
