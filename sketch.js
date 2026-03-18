@@ -1,4 +1,5 @@
-const DATA_FILE = "./data/quebec_city_monthly_temps_2000_2025.json";
+const PRECIP_DATA_FILE = "./data/quebec_city_monthly_precip_2000_2025.json";
+const TEMP_DATA_FILE = "./data/quebec_city_monthly_temps_2000_2025.json";
 
 const MONTH_NAMES = [
   "January",
@@ -15,8 +16,13 @@ const MONTH_NAMES = [
   "December",
 ];
 
+// Precipitation value (mm) that maps to the iris edge for the ring chart.
+// Increase/decrease this to rescale the precipitation y-axis.
+const PRECIP_Y_MAX_AT_EDGE = 250;
+
 let QUEBEC_CITIES = [];
-let cityMonthlyAvg = {};
+let cityMonthlyPrecip = {};
+let cityMonthlyTemp = {};
 let availableYears = [];
 let selectedYear = 2003;
 let selectedMonth = 1;
@@ -26,9 +32,15 @@ let loading = true;
 let loadError = null;
 let loadingMessage = "Loading local dataset...";
 let dataMeta = null;
+let tempDataMeta = null;
+let globalValueMin = null;
+let globalValueMax = null;
 let globalTempMin = null;
 let globalTempMax = null;
 let showCollaretteCurve = false;
+let showTempPupilGuide = false;
+let showPrecipAxes = false;
+let lastChartState = null;
 let collaretteDensity = 0;
 let densitySlider;
 let growingFiberOutward = 300;
@@ -46,7 +58,7 @@ let irisRandomnessSlider;
 let colorVariance = 0.3;
 let colorVarianceSlider;
 
-// ─── Temperature-driven iris colour palettes ───────────────────────────────────
+// ─── Data-driven iris colour palettes ──────────────────────────────────────────
 // Each palette defines the fiber gradient (collarette→limbus) and the inward
 // gradient (collarette→pupil), matched to real eye colour photographs.
 // Colors are hex strings so the IDE shows inline swatches for easy tweaking.
@@ -81,7 +93,7 @@ const PALETTE_WARM = {
   base: hex("#120501"), // near-black reddish-brown background
 };
 
-// Smoothly interpolates between cold→hazel→warm based on tempNorm ∈ [0,1].
+// Smoothly interpolates between low→mid→high value based on valueNorm ∈ [0,1].
 function getIrisPalette(t) {
   const ss = (x) => x * x * (3 - 2 * x); // smoothstep
   let f, from, to;
@@ -193,7 +205,7 @@ function setup() {
   });
 
   positionSliders();
-  loadTemperatureData();
+  loadData();
   noLoop();
 }
 
@@ -216,6 +228,8 @@ function draw() {
 
   drawHeader();
   drawChart();
+  if (showTempPupilGuide && lastChartState) drawTempPupilGuide(lastChartState);
+  if (showPrecipAxes && lastChartState) drawPrecipAxesOverlay(lastChartState);
   drawSliderLabels();
 }
 
@@ -225,7 +239,7 @@ function drawHeader() {
 
   fill(210, 185, 245);
   textSize(24);
-  text("Dans tes yeux — Quebec Monthly Temperature", 40, 24);
+  text("Dans tes yeux — Quebec Monthly Climate", 40, 24);
 
   textSize(14);
   fill(165, 140, 210);
@@ -233,8 +247,12 @@ function drawHeader() {
   text(`Month: ${MONTH_NAMES[selectedMonth - 1]}`, 42, 78);
 
   if (dataMeta) {
+    const precipYears = `${dataMeta.startYear}–${dataMeta.endYear}`;
+    const tempYears = tempDataMeta
+      ? `${tempDataMeta.startYear}–${tempDataMeta.endYear}`
+      : precipYears;
     text(
-      `Source: ${dataMeta.source} (${dataMeta.startYear}–${dataMeta.endYear})`,
+      `Ring: precipitation (${precipYears}) · Color/Pupil: temperature (${tempYears})`,
       42,
       98,
     );
@@ -245,9 +263,14 @@ function drawHeader() {
   textSize(10);
   fill(115, 90, 155);
   text(
-    `[C] precision curve: ${showCollaretteCurve ? "ON" : "off"}  ·  Pupil size = mean temperature`,
+    `[C] precision curve: ${showCollaretteCurve ? "ON" : "off"}  ·  Ring = precipitation · Pupil/Color = temperature`,
     42,
     118,
+  );
+  text(
+    `[T] temp→pupil guide: ${showTempPupilGuide ? "ON" : "off"}  ·  [P] precip axes: ${showPrecipAxes ? "ON" : "off"}`,
+    42,
+    132,
   );
 }
 
@@ -261,17 +284,27 @@ function drawCenteredText(message, yRatio) {
 // ─── Main chart / eye orchestrator ────────────────────────────────────────────
 
 function drawChart() {
-  const entries = QUEBEC_CITIES.map((city) => {
-    const byYear = cityMonthlyAvg[city.name] || {};
+  const precipEntries = QUEBEC_CITIES.map((city) => {
+    const byYear = cityMonthlyPrecip[city.name] || {};
     const byMonth = byYear[selectedYear] || {};
     return { name: city.name, value: byMonth[selectedMonth] ?? null };
   });
 
-  const validValues = entries
+  const tempEntries = QUEBEC_CITIES.map((city) => {
+    const byYear = cityMonthlyTemp[city.name] || {};
+    const byMonth = byYear[selectedYear] || {};
+    return { name: city.name, value: byMonth[selectedMonth] ?? null };
+  });
+
+  const validPrecipValues = precipEntries
+    .map((d) => d.value)
+    .filter((v) => Number.isFinite(v));
+  const validTempValues = tempEntries
     .map((d) => d.value)
     .filter((v) => Number.isFinite(v));
 
-  if (!validValues.length) {
+  if (!validPrecipValues.length || !validTempValues.length) {
+    lastChartState = null;
     drawCenteredText(
       `No data available for ${MONTH_NAMES[selectedMonth - 1]} ${selectedYear}`,
       0.56,
@@ -279,47 +312,53 @@ function drawChart() {
     return;
   }
 
-  const vMin = Number.isFinite(globalTempMin)
-    ? globalTempMin
-    : Math.floor(Math.min(...validValues)) - 1;
-  const vMax = Number.isFinite(globalTempMax)
-    ? globalTempMax
-    : Math.ceil(Math.max(...validValues)) + 1;
+  const vMin = 0;
+  const vMax = max(vMin + 1, PRECIP_Y_MAX_AT_EDGE);
 
   const cx = width * 0.5;
   const cy = height * 0.53;
   const irisR = Math.min(width, height) * 0.27;
 
-  // Collarette lives in the 30–68 % radial zone of the iris
+  // Collarette (line chart ring): vMax lands at the edge of the iris.
   const colMinR = irisR * 0.3;
-  const colMaxR = irisR * 0.68;
+  const colMaxR = irisR * 0.97;
 
-  // Build collarette points from temperature data
+  // Build collarette points from precipitation data (ring shape only)
   const colPoints = [];
-  for (let i = 0; i < entries.length; i++) {
-    if (!Number.isFinite(entries[i].value)) continue;
-    const angle = map(i, 0, entries.length, -HALF_PI, TWO_PI - HALF_PI);
-    const r = map(entries[i].value, vMin, vMax, colMinR, colMaxR);
+  for (let i = 0; i < precipEntries.length; i++) {
+    if (!Number.isFinite(precipEntries[i].value)) continue;
+    const angle = map(i, 0, precipEntries.length, -HALF_PI, TWO_PI - HALF_PI);
+    const r = map(
+      constrain(precipEntries[i].value, vMin, vMax),
+      vMin,
+      vMax,
+      colMinR,
+      colMaxR,
+    );
     colPoints.push({
       x: cx + cos(angle) * r,
       y: cy + sin(angle) * r,
       angle,
       r,
-      value: entries[i].value,
-      name: entries[i].name,
+      value: precipEntries[i].value,
+      name: precipEntries[i].name,
     });
   }
 
-  const monthlyMean =
-    validValues.reduce((s, v) => s + v, 0) / validValues.length;
-  const meanR = map(monthlyMean, vMin, vMax, colMinR, colMaxR);
-  // DATA→PUPIL: monthlyMean is mapped to meanR via the temperature range [vMin, vMax]
-  // → collarette radial zone [colMinR, colMaxR]. pupilR = 40% of meanR, so a warmer
-  // month (higher mean temp) produces a larger pupil. Floor at 10% of irisR.
+  // Temperature still controls pupil radius and color, as before.
+  const monthlyTempMean =
+    validTempValues.reduce((s, v) => s + v, 0) / validTempValues.length;
+  const tMin = Number.isFinite(globalTempMin)
+    ? globalTempMin
+    : Math.floor(Math.min(...validTempValues)) - 1;
+  const tMax = Number.isFinite(globalTempMax)
+    ? globalTempMax
+    : Math.ceil(Math.max(...validTempValues)) + 1;
+  const meanR = map(monthlyTempMean, tMin, tMax, colMinR, colMaxR);
   const pupilR = max(irisR * 0.1, meanR * 0.7);
 
   // Colour palette driven by monthly mean temperature (0=coldest→blue, 1=warmest→brown)
-  const tempNorm = constrain(map(monthlyMean, vMin, vMax, 0, 1), 0, 1);
+  const tempNorm = constrain(map(monthlyTempMean, tMin, tMax, 0, 1), 0, 1);
   const palette = getIrisPalette(tempNorm);
 
   // Seed random so fibers are stable for a given year+month
@@ -334,6 +373,123 @@ function drawChart() {
     drawCollaretteInwardFibers(cx, cy, colPoints, pupilR, palette);
   if (collaretteDensity > 0) drawCollarette(cx, cy, colPoints, palette);
   drawLimbus(cx, cy, irisR);
+
+  lastChartState = {
+    cx,
+    cy,
+    irisR,
+    colMinR,
+    colMaxR,
+    colPoints,
+    precipEntries,
+    vMin,
+    vMax,
+    monthlyTempMean,
+    tMin,
+    tMax,
+    pupilR,
+  };
+}
+
+function drawTempPupilGuide(state) {
+  const {
+    cx,
+    cy,
+    irisR,
+    colMinR,
+    colMaxR,
+    monthlyTempMean,
+    tMin,
+    tMax,
+    pupilR,
+  } = state;
+  const guideMinPupilR = max(irisR * 0.1, colMinR * 0.7);
+  const guideMaxPupilR = max(irisR * 0.1, colMaxR * 0.7);
+  const axisX = cx + irisR + 34;
+  const yTop = cy - guideMaxPupilR;
+  const yBottom = cy - guideMinPupilR;
+
+  stroke(220, 236, 255, 120);
+  strokeWeight(1);
+  line(axisX, yTop, axisX, yBottom);
+
+  noStroke();
+  fill(215, 235, 255, 220);
+  textAlign(LEFT, CENTER);
+  textSize(10);
+  text("Avg Temp (°C) -> pupil radius", axisX + 8, yTop - 10);
+
+  const ticks = 6;
+  for (let i = 0; i <= ticks; i++) {
+    const f = i / ticks;
+    const temp = lerp(tMin, tMax, f);
+    const meanR = map(temp, tMin, tMax, colMinR, colMaxR);
+    const pr = max(irisR * 0.1, meanR * 0.7);
+    const y = cy - pr;
+    stroke(220, 236, 255, 120);
+    line(axisX - 5, y, axisX + 5, y);
+    noStroke();
+    fill(215, 235, 255, 210);
+    text(`${temp.toFixed(1)}°`, axisX + 9, y);
+  }
+
+  const currY = cy - pupilR;
+  stroke(255, 210, 120, 220);
+  strokeWeight(1.2);
+  line(axisX - 10, currY, axisX + 75, currY);
+  noStroke();
+  fill(255, 210, 120, 240);
+  text(`current ${monthlyTempMean.toFixed(2)}°C`, axisX + 10, currY - 10);
+}
+
+function drawPrecipAxesOverlay(state) {
+  const { cx, cy, colMinR, colMaxR, precipEntries, vMin, vMax } = state;
+  textSize(10);
+
+  // Y axis (radial): precipitation values as concentric rings.
+  const ticks = 5;
+  for (let i = 0; i <= ticks; i++) {
+    const f = i / ticks;
+    const val = lerp(vMin, vMax, f);
+    const r = map(val, vMin, vMax, colMinR, colMaxR);
+    noFill();
+    stroke(168, 222, 255, 70);
+    strokeWeight(1);
+    circle(cx, cy, r * 2);
+    noStroke();
+    fill(168, 222, 255, 200);
+    textAlign(LEFT, CENTER);
+    text(`${val.toFixed(1)} mm`, cx + 8, cy - r - 2);
+  }
+
+  // X axis (angular): city spokes + exact city precipitation labels.
+  for (let i = 0; i < precipEntries.length; i++) {
+    const e = precipEntries[i];
+    if (!Number.isFinite(e.value)) continue;
+    const angle = map(i, 0, precipEntries.length, -HALF_PI, TWO_PI - HALF_PI);
+    const r = map(e.value, vMin, vMax, colMinR, colMaxR);
+    const x0 = cx + cos(angle) * colMinR;
+    const y0 = cy + sin(angle) * colMinR;
+    const x1 = cx + cos(angle) * (colMaxR + 8);
+    const y1 = cy + sin(angle) * (colMaxR + 8);
+    const xp = cx + cos(angle) * r;
+    const yp = cy + sin(angle) * r;
+    const xl = cx + cos(angle) * (colMaxR + 28);
+    const yl = cy + sin(angle) * (colMaxR + 28);
+
+    stroke(176, 205, 255, 70);
+    strokeWeight(1);
+    line(x0, y0, x1, y1);
+    noStroke();
+    fill(255, 245, 200, 235);
+    circle(xp, yp, 4);
+
+    fill(200, 220, 255, 220);
+    textAlign(CENTER, CENTER);
+    text(e.name, xl, yl);
+    fill(255, 235, 180, 220);
+    text(`${e.value.toFixed(1)} mm`, xp, yp - 10);
+  }
 }
 
 // ─── Eye drawing functions ─────────────────────────────────────────────────────
@@ -440,10 +596,12 @@ function growFiber(
   // gradient endpoints so the fiber shifts hue slightly while keeping its gradient shape.
   const cv = colorVariance * 55;
   const cl = (v) => constrain(v, 0, 255);
-  const dr = random(-cv, cv), dg = random(-cv, cv), db = random(-cv, cv);
-  const pStart  = palette.fiberStart.map((c, i) => cl(c + [dr, dg, db][i]));
-  const pEnd    = palette.fiberEnd.map((c, i)   => cl(c + [dr, dg, db][i]));
-  const pInward = palette.inwardEnd.map((c, i)  => cl(c + [dr, dg, db][i]));
+  const dr = random(-cv, cv),
+    dg = random(-cv, cv),
+    db = random(-cv, cv);
+  const pStart = palette.fiberStart.map((c, i) => cl(c + [dr, dg, db][i]));
+  const pEnd = palette.fiberEnd.map((c, i) => cl(c + [dr, dg, db][i]));
+  const pInward = palette.inwardEnd.map((c, i) => cl(c + [dr, dg, db][i]));
 
   for (let s = 0; s < totalSteps; s++) {
     const t = s / totalSteps; // 0 = at collarette, 1 = at target
@@ -555,9 +713,11 @@ function growRingOutwardFiber(cx, cy, sx, sy, irisR, palette) {
   // Per-fiber color variance
   const cv = colorVariance * 55;
   const cl = (v) => constrain(v, 0, 255);
-  const dr = random(-cv, cv), dg = random(-cv, cv), db = random(-cv, cv);
+  const dr = random(-cv, cv),
+    dg = random(-cv, cv),
+    db = random(-cv, cv);
   const pStart = palette.fiberStart.map((c, i) => cl(c + [dr, dg, db][i]));
-  const pEnd   = palette.fiberEnd.map((c, i)   => cl(c + [dr, dg, db][i]));
+  const pEnd = palette.fiberEnd.map((c, i) => cl(c + [dr, dg, db][i]));
 
   let drift = 0;
   let x = sx,
@@ -647,9 +807,11 @@ function growRingInwardFiber(cx, cy, sx, sy, pupilR, palette) {
   // Per-fiber color variance
   const cv = colorVariance * 55;
   const cl = (v) => constrain(v, 0, 255);
-  const dr = random(-cv, cv), dg = random(-cv, cv), db = random(-cv, cv);
-  const pStart  = palette.fiberStart.map((c, i) => cl(c + [dr, dg, db][i]));
-  const pInward = palette.inwardEnd.map((c, i)  => cl(c + [dr, dg, db][i]));
+  const dr = random(-cv, cv),
+    dg = random(-cv, cv),
+    db = random(-cv, cv);
+  const pStart = palette.fiberStart.map((c, i) => cl(c + [dr, dg, db][i]));
+  const pInward = palette.inwardEnd.map((c, i) => cl(c + [dr, dg, db][i]));
 
   let drift = 0;
   let x = sx,
@@ -783,10 +945,10 @@ function drawLimbus(cx, cy, r) {
 
 // ─── Data loading ──────────────────────────────────────────────────────────────
 
-async function loadTemperatureData() {
+async function loadData() {
   loading = true;
   loadError = null;
-  loadingMessage = "Loading local dataset...";
+  loadingMessage = "Loading local datasets...";
 
   if (window.location.protocol === "file:") {
     loadError =
@@ -797,50 +959,88 @@ async function loadTemperatureData() {
   }
 
   try {
-    const response = await fetch(DATA_FILE, { cache: "no-store" });
-    if (!response.ok) {
-      throw new Error(`Dataset file request failed: ${response.status}`);
+    const [precipResp, tempResp] = await Promise.all([
+      fetch(PRECIP_DATA_FILE, { cache: "no-store" }),
+      fetch(TEMP_DATA_FILE, { cache: "no-store" }),
+    ]);
+    if (!precipResp.ok) {
+      throw new Error(
+        `Precip dataset file request failed: ${precipResp.status}`,
+      );
     }
-    const payload = await response.json();
-    hydrateFromDataset(payload);
+    if (!tempResp.ok) {
+      throw new Error(`Temp dataset file request failed: ${tempResp.status}`);
+    }
+    const [precipPayload, tempPayload] = await Promise.all([
+      precipResp.json(),
+      tempResp.json(),
+    ]);
+    hydrateFromDatasets(precipPayload, tempPayload);
   } catch (err) {
     console.error(err);
     loadError =
-      "Could not load local monthly dataset. Run `node scripts/download_quebec_temps.mjs` first.";
+      "Could not load local datasets. Run `node scripts/download_quebec_precip.mjs` and ensure temperature JSON exists.";
   } finally {
     loading = false;
     redraw();
   }
 }
 
-function hydrateFromDataset(payload) {
+function hydrateFromDatasets(precipPayload, tempPayload) {
   dataMeta = {
-    source: payload?.source || "Unknown",
-    startYear: payload?.startYear,
-    endYear: payload?.endYear,
+    source: precipPayload?.source || "Unknown",
+    startYear: precipPayload?.startYear,
+    endYear: precipPayload?.endYear,
+  };
+  tempDataMeta = {
+    source: tempPayload?.source || "Unknown",
+    startYear: tempPayload?.startYear,
+    endYear: tempPayload?.endYear,
   };
 
-  const rows = Array.isArray(payload?.cities) ? payload.cities : [];
-  QUEBEC_CITIES = rows.map((row) => ({
+  const precipRows = Array.isArray(precipPayload?.cities)
+    ? precipPayload.cities
+    : [];
+  const tempRows = Array.isArray(tempPayload?.cities) ? tempPayload.cities : [];
+  const baseRows = precipRows.length ? precipRows : tempRows;
+
+  QUEBEC_CITIES = baseRows.map((row) => ({
     name: row.city,
     latitude: row.latitude,
     longitude: row.longitude,
   }));
 
-  cityMonthlyAvg = {};
-  rows.forEach((row) => {
-    cityMonthlyAvg[row.city] = row.monthly || {};
+  cityMonthlyPrecip = {};
+  precipRows.forEach((row) => {
+    cityMonthlyPrecip[row.city] = row.monthly || {};
+  });
+
+  cityMonthlyTemp = {};
+  tempRows.forEach((row) => {
+    cityMonthlyTemp[row.city] = row.monthly || {};
   });
 
   const years = new Set();
-  const allValues = [];
-  rows.forEach((row) => {
+  const allPrecipValues = [];
+  precipRows.forEach((row) => {
     const monthly = row.monthly || {};
     Object.keys(monthly).forEach((year) => {
       years.add(Number(year));
       const months = monthly[year] || {};
       Object.values(months).forEach((value) => {
-        if (Number.isFinite(value)) allValues.push(value);
+        if (Number.isFinite(value)) allPrecipValues.push(value);
+      });
+    });
+  });
+
+  const allTempValues = [];
+  tempRows.forEach((row) => {
+    const monthly = row.monthly || {};
+    Object.keys(monthly).forEach((year) => {
+      years.add(Number(year));
+      const months = monthly[year] || {};
+      Object.values(months).forEach((value) => {
+        if (Number.isFinite(value)) allTempValues.push(value);
       });
     });
   });
@@ -850,9 +1050,17 @@ function hydrateFromDataset(payload) {
     throw new Error("Dataset does not contain monthly values.");
   }
 
-  if (allValues.length) {
-    globalTempMin = Math.floor(Math.min(...allValues)) - 1;
-    globalTempMax = Math.ceil(Math.max(...allValues)) + 1;
+  if (allPrecipValues.length) {
+    globalValueMin = Math.floor(Math.min(...allPrecipValues)) - 1;
+    globalValueMax = Math.ceil(Math.max(...allPrecipValues)) + 1;
+    if (globalValueMin === globalValueMax) {
+      globalValueMax += 1;
+      globalValueMin -= 1;
+    }
+  }
+  if (allTempValues.length) {
+    globalTempMin = Math.floor(Math.min(...allTempValues)) - 1;
+    globalTempMax = Math.ceil(Math.max(...allTempValues)) + 1;
     if (globalTempMin === globalTempMax) {
       globalTempMax += 1;
       globalTempMin -= 1;
@@ -882,6 +1090,14 @@ function hydrateFromDataset(payload) {
 function keyPressed() {
   if (key === "c" || key === "C") {
     showCollaretteCurve = !showCollaretteCurve;
+    redraw();
+  }
+  if (key === "t" || key === "T") {
+    showTempPupilGuide = !showTempPupilGuide;
+    redraw();
+  }
+  if (key === "p" || key === "P") {
+    showPrecipAxes = !showPrecipAxes;
     redraw();
   }
 }
