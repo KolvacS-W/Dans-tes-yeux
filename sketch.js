@@ -41,6 +41,8 @@ const CANVAS_W_RATIO = 0.95;
 // Slider panel layout.
 const SLIDER_ROW_H = 32;
 const SLIDER_W = 185;
+// Browser range inputs render slightly differently by platform; nudge label anchors.
+const SLIDER_LABEL_Y_NUDGE = -4;
 
 // ============================
 // Artistic controls
@@ -451,7 +453,7 @@ function drawChart() {
   if (collaretteDensity > 0) {
     drawCollarette(cx, cy, colPoints, palette);
   }
-  drawLimbus(cx, cy, irisR);
+  // drawLimbus(cx, cy, irisR);
 
   // 8) Cache derived geometry for explanatory overlays.
   lastChartState = {
@@ -1284,7 +1286,7 @@ function drawSliderLabels() {
       range: "0.5 - 6.0",
       value: irisMaxWidth.toFixed(1),
     },
-    //{ name: "Ring lines", range: "0 - 300", value: String(collaretteDensity) },
+    { name: "Ring lines", range: "0 - 300", value: String(collaretteDensity) },
     {
       name: "Growing fibers (out)",
       range: "0 - 1000",
@@ -1303,7 +1305,7 @@ function drawSliderLabels() {
 
   defs.forEach((def, i) => {
     const sliderY = height - SLIDER_ROW_H * (defs.length - i);
-    const midY = sliderY + 9;
+    const midY = sliderY + 9 + SLIDER_LABEL_Y_NUDGE;
     const lx = sx - 10;
 
     fill(200, 175, 245);
