@@ -466,6 +466,47 @@ function drawPrecipAxesOverlay(state) {
     text(`${val.toFixed(1)} mm`, cx + 8, cy - r - 2);
   }
 
+  // Precise precipitation line chart (thick white), unsmoothed.
+  // If there are missing city values, draw open segments to avoid false bridge lines.
+  const plotPoints = precipEntries.map((e, i) => {
+    if (!Number.isFinite(e.value)) return null;
+    const angle = map(i, 0, precipEntries.length, -HALF_PI, TWO_PI - HALF_PI);
+    const r = map(constrain(e.value, vMin, vMax), vMin, vMax, colMinR, colMaxR);
+    return {
+      x: cx + cos(angle) * r,
+      y: cy + sin(angle) * r,
+    };
+  });
+  const hasMissing = plotPoints.some((p) => p === null);
+  const validCount = plotPoints.reduce((n, p) => n + (p ? 1 : 0), 0);
+  if (validCount >= 2) {
+    noFill();
+    stroke(255, 255, 255, 245);
+    strokeWeight(4.2);
+    if (!hasMissing) {
+      beginShape();
+      for (const p of plotPoints) vertex(p.x, p.y);
+      endShape(CLOSE);
+    } else {
+      let drawing = false;
+      for (const p of plotPoints) {
+        if (!p) {
+          if (drawing) {
+            endShape();
+            drawing = false;
+          }
+          continue;
+        }
+        if (!drawing) {
+          beginShape();
+          drawing = true;
+        }
+        vertex(p.x, p.y);
+      }
+      if (drawing) endShape();
+    }
+  }
+
   // X axis (angular): city spokes + exact city precipitation labels.
   for (let i = 0; i < precipEntries.length; i++) {
     const e = precipEntries[i];
