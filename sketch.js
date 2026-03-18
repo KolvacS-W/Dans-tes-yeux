@@ -31,8 +31,10 @@ let globalTempMax = null;
 let showCollaretteCurve = false;
 let collaretteDensity = 0;
 let densitySlider;
-let growingFiberCount = 300;
-let growingFiberSlider;
+let growingFiberOutward = 300;
+let growingFiberOutwardSlider;
+let growingFiberInward = 50;
+let growingFiberInwardSlider;
 let irisLineCount = 900;
 let irisLineCountSlider;
 let irisMinWidth = 0.22;
@@ -132,11 +134,19 @@ function setup() {
     redraw();
   });
 
-  growingFiberSlider = createSlider(0, 1000, growingFiberCount, 10);
-  growingFiberSlider.parent(container);
-  growingFiberSlider.addClass("p5Slider");
-  growingFiberSlider.input(() => {
-    growingFiberCount = growingFiberSlider.value();
+  growingFiberOutwardSlider = createSlider(0, 1000, growingFiberOutward, 10);
+  growingFiberOutwardSlider.parent(container);
+  growingFiberOutwardSlider.addClass("p5Slider");
+  growingFiberOutwardSlider.input(() => {
+    growingFiberOutward = growingFiberOutwardSlider.value();
+    redraw();
+  });
+
+  growingFiberInwardSlider = createSlider(0, 1000, growingFiberInward, 10);
+  growingFiberInwardSlider.parent(container);
+  growingFiberInwardSlider.addClass("p5Slider");
+  growingFiberInwardSlider.input(() => {
+    growingFiberInward = growingFiberInwardSlider.value();
     redraw();
   });
 
@@ -308,8 +318,10 @@ function drawChart() {
   drawIrisBase(cx, cy, irisR, palette);
   drawPupil(cx, cy, pupilR); // black base drawn first — fibers grow over it
   drawIrisFibers(cx, cy, pupilR, irisR, colPoints, palette);
-  if (growingFiberCount > 0)
+  if (growingFiberOutward > 0)
     drawCollaretteGrowingFibers(cx, cy, colPoints, irisR, palette);
+  if (growingFiberInward > 0)
+    drawCollaretteInwardFibers(cx, cy, colPoints, pupilR, palette);
   if (collaretteDensity > 0) drawCollarette(cx, cy, colPoints, palette);
   drawLimbus(cx, cy, irisR);
 }
@@ -485,7 +497,7 @@ function growFiber(
 // for a short arc, then curve and grow outward to the limbus — mimicking how iris
 // fibers in a real eye appear to originate from the collarette structure.
 function drawCollaretteGrowingFibers(cx, cy, colPoints, irisR, palette) {
-  const numFibers = growingFiberCount;
+  const numFibers = growingFiberOutward;
   const n = colPoints.length;
   if (n < 2) return;
   noFill();
@@ -557,6 +569,87 @@ function growRingOutwardFiber(cx, cy, sx, sy, irisR, palette) {
       lerp(fs[1], fe[1], ease),
       lerp(fs[2], fe[2], ease),
       lerp(parentAlpha, parentAlpha * 0.17, pow(t, 1.3)),
+    );
+    strokeWeight(max(irisMinWidth, baseThickness * (1 - t * 0.65)));
+
+    if (prevX !== null) line(prevX, prevY, nx, ny);
+    prevX = nx;
+    prevY = ny;
+    x = nx;
+    y = ny;
+  }
+}
+
+// Seeds fibers uniformly along the collarette ring that first travel tangentially
+// then curve inward toward the pupil — mirror of drawCollaretteGrowingFibers.
+function drawCollaretteInwardFibers(cx, cy, colPoints, pupilR, palette) {
+  const numFibers = growingFiberInward;
+  const n = colPoints.length;
+  if (n < 2) return;
+  noFill();
+
+  for (let i = 0; i < numFibers; i++) {
+    const t = i / numFibers;
+    const rawIdx = t * n;
+    const i0 = floor(rawIdx) % n;
+    const i1 = (i0 + 1) % n;
+    const f = rawIdx - floor(rawIdx);
+    const sx = lerp(colPoints[i0].x, colPoints[i1].x, f);
+    const sy = lerp(colPoints[i0].y, colPoints[i1].y, f);
+    growRingInwardFiber(cx, cy, sx, sy, pupilR, palette);
+  }
+}
+
+// Fiber starts nearly tangential to the ring, then smoothly curves inward to pupil.
+// Start angle is offset from the pure inward direction by 1.0–1.4 rad (57–80°),
+// keeping it always within the inward half-circle so it never drifts outward.
+function growRingInwardFiber(cx, cy, sx, sy, pupilR, palette) {
+  const radAng = atan2(sy - cy, sx - cx);
+  const startR = sqrt((sx - cx) * (sx - cx) + (sy - cy) * (sy - cy));
+  const inwardAng = radAng + PI; // purely radial inward direction
+
+  // Lean toward the ring tangent (57–80° off inward) while staying inward-half.
+  // The offset is < PI/2 so cos component in the outward direction stays negative.
+  const tangDir = random() < 0.5 ? 1 : -1;
+  const startAng = inwardAng + tangDir * random(1.0, 1.4);
+
+  const step = 1.6;
+  const totalSteps = max(5, floor((startR - pupilR) / step));
+  const parentAlpha = random(70, 118);
+  const baseThickness = lerp(
+    irisMinWidth,
+    irisMaxWidth,
+    lerp(0.5, random(), irisRandomness),
+  );
+
+  let drift = 0;
+  let x = sx,
+    y = sy;
+  let prevX = null,
+    prevY = null;
+
+  for (let s = 0; s < totalSteps; s++) {
+    const t = s / totalSteps;
+    drift += random(-0.022, 0.022);
+
+    // Blend from tangential-lean → pure inward; drift fades so pupil arrival is clean
+    const blend = pow(t, 0.55);
+    const ang = lerp(startAng, inwardAng, blend) + drift * (1 - blend);
+
+    const nx = x + cos(ang) * step;
+    const ny = y + sin(ang) * step;
+    const currR = sqrt((nx - cx) * (nx - cx) + (ny - cy) * (ny - cy));
+    if (currR <= pupilR * 1.04) break;
+
+    // Inward gradient: fiberStart at collarette → inwardEnd near pupil, brightening
+    const fs = palette.fiberStart,
+      ie = palette.inwardEnd;
+    const ease = pow(t, 0.42);
+    stroke(
+      lerp(fs[0], ie[0], ease),
+      lerp(fs[1], ie[1], ease),
+      lerp(fs[2], ie[2], ease),
+      min(lerp(parentAlpha, parentAlpha * 1.45, ease), 228),
     );
     strokeWeight(max(irisMinWidth, baseThickness * (1 - t * 0.65)));
 
@@ -790,7 +883,8 @@ function positionSliders() {
     irisMinWidthSlider,
     irisMaxWidthSlider,
     densitySlider,
-    growingFiberSlider,
+    growingFiberOutwardSlider,
+    growingFiberInwardSlider,
   ];
   sliders.forEach((s, i) => {
     s.position(sx, height - SLIDER_ROW_H * (sliders.length - i));
@@ -822,9 +916,14 @@ function drawSliderLabels() {
     },
     { name: "Ring lines", range: "0 – 300", val: String(collaretteDensity) },
     {
-      name: "Growing fibers",
+      name: "Growing fibers (out)",
       range: "0 – 1000",
-      val: String(growingFiberCount),
+      val: String(growingFiberOutward),
+    },
+    {
+      name: "Growing fibers (in)",
+      range: "0 – 1000",
+      val: String(growingFiberInward),
     },
   ];
 
